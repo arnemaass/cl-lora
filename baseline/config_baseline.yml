@@ -1,9 +1,11 @@
+# Aktualisierte Konfigurationsdatei für Continual-Learning-Benchmark
 
+# Test-Typ: 'replay' oder 'no_replay'
 test_type: replay
 
 # Modell-Definition
-model_module: my_models                        # Python-Modul, das die Modell-Factory enthält
-model_factory: get_model                       # Funktion innerhalb des Moduls, erzeugt eine Modellinstanz
+model_module: my_models                   # Python-Modul mit Modell-Factory
+model_factory: get_model                  # Factory-Funktion
 model_params:
   learning_rate: 0.001
   hidden_units: [128, 64]
@@ -11,14 +13,30 @@ model_params:
 # Parameter für die Tests
 params:
   countries:
-    - DE
-    - FR
-    - IT
-  get_dataset: my_data_loader:get_dataset      # Pfad zum Datenloader (Modul:Fn)
-  metrics_fn: my_metrics:compute_metrics       # Pfad zur Metrik-Funktion (Modul:Fn)
+    - Finland
+    - Ireland
+    - Serbia
+  permutation: [0, 1, 2]                # Reihenfolge der Länder-Indices
+
+  # Anzahl der zufällig gezogenen Samples pro Land
+  train_samples: 22482
+  test_samples: 8176
+  seed: 42                              # Seed für Reproduzierbarkeit
+
+  # DataLoader-Parameter
+  batch_size: 64
+  num_workers: 8
+
+  # Bildgröße und Filteroptionen
+  img_size: [12, 128, 128]
+  include_snowy: false
+  include_cloudy: false
+
+  # Training-spezifische Fit-Argumente
   fit_kwargs:
     epochs: 10
     batch_size: 32
-  save_dir: ./saved_models                     # Verzeichnis zum Speichern der Modellgewichte
+
+  save_dir: ./saved_models                # Verzeichnis zum Speichern der Modelle
   log_every_step: true
 
