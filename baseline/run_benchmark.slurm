@@ -18,5 +18,12 @@ mkdir -p log
 #    (das ist das Ergebnis von `which python` in deinem Env)
 PYTHON=/faststorage/arne/mamba/envs/cl_lora_env/bin/python
 
+export PYTHONPATH="/faststorage/shuocheng/LoRA_ViT:/home/arne/LoRA-ViT:${PYTHONPATH:-}"
+
+# 5) run baseline.py, teeing logs into a timestamped file
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+LOGFILE=log/pytorch_job_${TIMESTAMP}.log
+
+
 # 4) Skript starten
-srun $PYTHON baseline.py --config config_baseline.yml
+srun $PYTHON baseline.py --config config_baseline.yml 2>&1 | tee "$LOGFILE"

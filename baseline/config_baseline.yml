@@ -19,8 +19,8 @@ params:
   permutation: [0, 1, 2]                # Reihenfolge der Länder-Indices
 
   # Anzahl der zufällig gezogenen Samples pro Land
-  train_samples: 22482
-  test_samples: 8176
+  train_samples: 10 #22482
+  test_samples: 5 #8176
   seed: 42                              # Seed für Reproduzierbarkeit
 
   # DataLoader-Parameter

@@ -11,6 +11,7 @@ import yaml
 import argparse
 from torch.utils.data import DataLoader, ConcatDataset
 from sklearn.metrics import accuracy_score
+from SpectralGPT import *
 
 # --- DataSet factory based on configilm / BENv2 ---
 from configilm import util
@@ -31,7 +32,8 @@ def load_country_train_val(
     img_size=(14, 120, 120),
     include_snowy=False,
     include_cloudy=False,
-    split = "train"
+    split = "train",
+    frac = 0.8
 ):
     """
     Samples n_samples patches from the TRAIN split of `country`,
@@ -57,6 +59,10 @@ def load_country_train_val(
     sampled = rng.sample(available, k=n_samples)
 
     # 4) 80/20 split
+    # 4) 80/20 split
+    split_at = int(n_samples * frac)
+    train_ids = set(sampled[:split_at])
+    val_ids = set(sampled[split_at:])
     ids = set(sampled[:])
 
     # 5) helper to build a dataset that still uses split="train"
@@ -64,10 +70,11 @@ def load_country_train_val(
         return BENv2DataSet(
             data_dirs=datapath,
             img_size=img_size,
-            split="train",            # draw only from the original train partition
+            split=split,            # draw only from the original train partition
             include_snowy=include_snowy,
             include_cloudy=include_cloudy,
             patch_prefilter=lambda pid: pid in keep_ids,
+            transform=transform
         )
 
     ds = _make_ds(ids)
@@ -128,8 +135,8 @@ def test_continual_learning(
                               include_cloudy=params.get('include_cloudy', False),
                               samples_per_country=test_samples,
                               seed=seed)
-    print(len(train_sets))  # now only patches from Austria
-    print(len(train_sets[0]))  # now only patches from Austria
+
+    print(len(test_sets[0]))  # now only patches from Austria
 
 
     metrics_fn = params.get('metrics_fn', default_metrics)
@@ -144,12 +151,15 @@ def test_continual_learning(
 
         # Build training DataLoader
         concat_train = ConcatDataset(train_sets[:step])
+        concat_test = ConcatDataset(test_sets[:step])
         train_loader = DataLoader(concat_train, batch_size=batch_size,
                                   shuffle=True, num_workers=num_workers)
+        test_loader = DataLoader(concat_test, batch_size=batch_size,
+                                 shuffle=False, num_workers=num_workers)# TODO change do val_loader
 
         # Train
         start_train = time.time()
-        model.fit(train_loader, **params.get('fit_kwargs', {}))
+        model = train_model_replay(model,train_loader,test_loader,epochs=1)
         train_time = time.time() - start_train
         log.info(f"Training time: {train_time:.2f}s")
 
@@ -166,12 +176,8 @@ def test_continual_learning(
             country = countries[idx]
             test_loader = DataLoader(test_sets[idx], batch_size=batch_size,
                                      shuffle=False, num_workers=num_workers)
-            y_true, y_pred = [], []
-            for x, y in test_loader:
-                preds = model.predict(x)
-                y_true.extend(y.tolist())
-                y_pred.extend(preds if isinstance(preds, list) else preds.tolist())
-            m = metrics_fn(y_true, y_pred)
+            m = eval_model(model,test_loader)
+
             for name, val in m.items():
                 eval_metrics[f"{country}_{name}"] = val
         eval_time = time.time() - start_eval
@@ -302,7 +308,7 @@ def main_from_config(config_path: str) -> pd.DataFrame:
     if test_type == 'replay':
         #mod, fac = cfg['model_module'].split(':', 1)
         #model = getattr(import_module(mod), fac)(**cfg.get('model_params', {}))
-        model = None
+        model = load_model(4)
         return test_continual_learning(model, params)
     elif test_type == 'no_replay':
         mod, cls = cfg['model_module'].split(':', 1)
