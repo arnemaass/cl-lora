@@ -156,6 +156,11 @@ def test_continual_learning(
     #print("test")
     #print(img.shape)
 
+    #save unchanged lora_weights once
+    path="/saved_models/lora_weights_baseline.safetensors"
+    #model.save_fc_parameters(path)
+    #model.save_lora_parameters(path)
+
 
     metrics_fn = params.get('metrics_fn', default_metrics)
     save_dir = params.get('save_dir')
@@ -176,6 +181,8 @@ def test_continual_learning(
                                  shuffle=False, num_workers=num_workers)
 
         # TODO always reload pretrain weights
+        #model.load_fc_parameters(path)
+        #model.save_lora_parameters(path)
         #model = load_model(r=4)
         # Train
         start_train = time.time()

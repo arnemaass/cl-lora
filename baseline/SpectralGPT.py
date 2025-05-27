@@ -99,7 +99,8 @@ def load_model(r=4):
     # Move model to device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     lora_model.to(device)
-    return model
+
+    return lora_model
 
 def train_model_replay(lora_model,train_loader,val_loader,epochs=25):
 
