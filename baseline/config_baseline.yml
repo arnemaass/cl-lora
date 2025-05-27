@@ -16,15 +16,17 @@ params:
     - Finland
     - Ireland
     - Serbia
-  permutation: [0, 1, 2]                # Reihenfolge der Länder-Indices
+    - Austria
+    - Portugal
+  permutation: [0, 1, 2, 3, 4]                # Reihenfolge der Länder-Indices
 
   # Anzahl der zufällig gezogenen Samples pro Land
-  train_samples: 10 #22482
-  test_samples: 5 #8176
+  train_samples: 1000 #22482
+  test_samples: 100 #8176
   seed: 42                              # Seed für Reproduzierbarkeit
 
   # DataLoader-Parameter
-  batch_size: 64
+  batch_size: 16
   num_workers: 8
 
   # Bildgröße und Filteroptionen
@@ -35,7 +37,7 @@ params:
   # Training-spezifische Fit-Argumente
   fit_kwargs:
     epochs: 10
-    batch_size: 32
+    batch_size: 16
 
   save_dir: ./saved_models                # Verzeichnis zum Speichern der Modelle
   log_every_step: true

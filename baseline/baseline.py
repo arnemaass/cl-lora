@@ -1,7 +1,7 @@
 import time
 import logging
 import random
-from typing import Any, Dict, List, Callable
+from typing import Any, Dict, List, Callable, Tuple
 import pandas as pd
 from collections import defaultdict
 import os
@@ -12,6 +12,7 @@ import argparse
 from torch.utils.data import DataLoader, ConcatDataset
 from sklearn.metrics import accuracy_score
 from SpectralGPT import *
+
 
 # --- DataSet factory based on configilm / BENv2 ---
 from configilm import util
@@ -77,8 +78,13 @@ def load_country_train_val(
             transform=transform
         )
 
-    ds = _make_ds(ids)
-    return ds
+    ds_train = _make_ds(train_ids)
+    ds_val =  _make_ds(val_ids)
+
+    #ds = _make_ds(ids)
+    return ds_train, ds_val
+
+
 
 def get_datasets(
     countries: List[str],
@@ -88,13 +94,19 @@ def get_datasets(
     include_snowy: bool = False,
     include_cloudy: bool = False,
     samples_per_country: int = None,
-    seed: int = 0
-) -> List[BENv2DataSet]:
-    datasets: List[BENv2DataSet] = []
+    seed: int = 0,
+    frac =0.8
+) -> Tuple[List[BENv2DataSet], List[BENv2DataSet]]:
+    train_datasets: List[BENv2DataSet] = []
+    val_datasets: List[BENv2DataSet] = []
+
     for idx in permutation:
         country = countries[idx]
-        datasets.append(load_country_train_val(country, samples_per_country, 123, split=split))
-    return datasets
+        train_ds, val_ds = load_country_train_val(country, samples_per_country, 123, split=split,frac=frac)
+        train_datasets.append(train_ds)
+        val_datasets.append(val_ds)
+
+    return train_datasets, val_datasets
 
 def default_metrics(y_true: List[Any], y_pred: List[Any]) -> Dict[str, float]:
     """
@@ -119,24 +131,30 @@ def test_continual_learning(
     train_samples = params.get('train_samples')
     test_samples = params.get('test_samples')
     seed = params.get('seed', 0)
-    batch_size = params.get('batch_size', 32)
+    batch_size = params.get('batch_size', 16)
     num_workers = params.get('num_workers', 4)
     print(countries)
 
-    train_sets = get_datasets(countries, permutation, split='train',
-                              img_size=params.get('img_size', (12,128,128)),
+    train_sets, val_sets = get_datasets(countries, permutation, split='train',
+                              img_size=params.get('img_size', (12, 128, 128)),
                               include_snowy=params.get('include_snowy', False),
                               include_cloudy=params.get('include_cloudy', False),
                               samples_per_country=train_samples,
                               seed=seed)
-    test_sets  = get_datasets(countries, permutation, split='test',
-                              img_size=params.get('img_size', (12,128,128)),
-                              include_snowy=params.get('include_snowy', False),
-                              include_cloudy=params.get('include_cloudy', False),
-                              samples_per_country=test_samples,
-                              seed=seed)
+    test_sets, _ = get_datasets(countries, permutation, split='test',
+                             img_size=params.get('img_size', (12, 128, 128)),
+                             include_snowy=params.get('include_snowy', False),
+                             include_cloudy=params.get('include_cloudy', False),
+                             samples_per_country=test_samples,
+                             seed=seed,
+                             frac =1)
 
     print(len(test_sets[0]))  # now only patches from Austria
+    print(len(val_sets[0]))  # now only patches from Austria
+    print(len(train_sets[0]))  # now only patches from Austria
+    #img, lbl = train_sets[0][0]
+    #print("test")
+    #print(img.shape)
 
 
     metrics_fn = params.get('metrics_fn', default_metrics)
@@ -151,15 +169,17 @@ def test_continual_learning(
 
         # Build training DataLoader
         concat_train = ConcatDataset(train_sets[:step])
-        concat_test = ConcatDataset(test_sets[:step])
+        concat_val = ConcatDataset(val_sets[:step])
         train_loader = DataLoader(concat_train, batch_size=batch_size,
                                   shuffle=True, num_workers=num_workers)
-        test_loader = DataLoader(concat_test, batch_size=batch_size,
-                                 shuffle=False, num_workers=num_workers)# TODO change do val_loader
+        val_loader = DataLoader(concat_val, batch_size=batch_size,
+                                 shuffle=False, num_workers=num_workers)
 
+        # TODO always reload pretrain weights
+        #model = load_model(r=4)
         # Train
         start_train = time.time()
-        model = train_model_replay(model,train_loader,test_loader,epochs=1)
+        model = train_model_replay(model,train_loader,val_loader,epochs=15)
         train_time = time.time() - start_train
         log.info(f"Training time: {train_time:.2f}s")
 
@@ -200,7 +220,7 @@ def test_continual_learning(
 
 
 def test_continual_learning_no_replay(
-    model_class: Callable[[], Any],
+    model: Any,
     params: Dict[str, Any]
 ) -> pd.DataFrame:
     """
@@ -215,21 +235,23 @@ def test_continual_learning_no_replay(
     train_samples = params.get('train_samples')
     test_samples = params.get('test_samples')
     seed = params.get('seed', 0)
-    batch_size = params.get('batch_size', 32)
+    batch_size = params.get('batch_size', 16)
     num_workers = params.get('num_workers', 4)
 
-    train_sets = get_datasets(countries, permutation, split='train',
-                              img_size=params.get('img_size', (12,128,128)),
-                              include_snowy=params.get('include_snowy', False),
-                              include_cloudy=params.get('include_cloudy', False),
-                              samples_per_country=train_samples,
-                              seed=seed)
-    test_sets  = get_datasets(countries, permutation, split='test',
-                              img_size=params.get('img_size', (12,128,128)),
-                              include_snowy=params.get('include_snowy', False),
-                              include_cloudy=params.get('include_cloudy', False),
-                              samples_per_country=test_samples,
-                              seed=seed)
+    train_sets, val_sets = get_datasets(countries, permutation, split='train',
+                                        img_size=params.get('img_size', (12, 128, 128)),
+                                        include_snowy=params.get('include_snowy', False),
+                                        include_cloudy=params.get('include_cloudy', False),
+                                        samples_per_country=train_samples,
+                                        seed=seed)
+    test_sets, _ = get_datasets(countries, permutation, split='test',
+                                img_size=params.get('img_size', (12, 128, 128)),
+                                include_snowy=params.get('include_snowy', False),
+                                include_cloudy=params.get('include_cloudy', False),
+                                samples_per_country=test_samples,
+                                seed=seed,
+                                frac=1)
+
     save_dir = params.get('save_dir')
     metrics_fn = params.get('metrics_fn', default_metrics)
 
@@ -242,18 +264,26 @@ def test_continual_learning_no_replay(
         seen_countries = [countries[i] for i in seen_idx]
         log.info(f"Step {step}: Countries {seen_countries}")
 
+        # ToDO load lora weights from last step
+        """
         # Init/load
-        if step == 1:
+        if step == 1: #ToDO load lora weights from last step
             model = model_class()
         else:
             model = joblib.load(prev_model_path)
+        """
 
         # Train on new country DataLoader
         ds_new = train_sets[step-1]
         train_loader = DataLoader(ds_new, batch_size=batch_size,
                                   shuffle=True, num_workers=num_workers)
+        ds_new_val = val_sets[step-1]
+        val_loader = DataLoader(ds_new_val, batch_size=batch_size,
+                                shuffle=False, num_workers=num_workers)
+
+        # Train
         start_train = time.time()
-        model.fit(train_loader, **params.get('fit_kwargs', {}))
+        model = train_model_replay(model,train_loader,val_loader,epochs=15)
         train_time = time.time() - start_train
         log.info(f"Training time: {train_time:.2f}s")
 
@@ -270,12 +300,7 @@ def test_continual_learning_no_replay(
             country = countries[idx]
             test_loader = DataLoader(test_sets[idx], batch_size=batch_size,
                                      shuffle=False, num_workers=num_workers)
-            y_true, y_pred = [], []
-            for x, y in test_loader:
-                preds = model.predict(x)
-                y_true.extend(y.tolist())
-                y_pred.extend(preds if isinstance(preds, list) else preds.tolist())
-            m = metrics_fn(y_true, y_pred)
+            m = eval_model(model, test_loader)
             for name, val in m.items(): eval_metrics[f"{country}_{name}"] = val
         eval_time = time.time() - start_eval
         log.info(f"Eval time: {eval_time:.2f}s")
@@ -309,11 +334,12 @@ def main_from_config(config_path: str) -> pd.DataFrame:
         #mod, fac = cfg['model_module'].split(':', 1)
         #model = getattr(import_module(mod), fac)(**cfg.get('model_params', {}))
         model = load_model(4)
-        return test_continual_learning(model, params)
+        return test_continual_learning(model,params)
     elif test_type == 'no_replay':
-        mod, cls = cfg['model_module'].split(':', 1)
-        model_class = getattr(import_module(mod), cls)
-        return test_continual_learning_no_replay(model_class, params)
+        #mod, cls = cfg['model_module'].split(':', 1)
+        #model_class = getattr(import_module(mod), cls)
+        model = load_model(4)
+        return test_continual_learning_no_replay(model, params)
     else:
         raise ValueError(f"Unknown test_type: {test_type}")
 

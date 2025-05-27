@@ -174,7 +174,7 @@ def train_model_replay(lora_model,train_loader,val_loader,epochs=25):
 
 
 def train_model_no_replay():
-    pass #TODO implelent this
+    pass #NOTE we can use the replay none
 
 def eval_model(lora_model,test_loader):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -241,6 +241,14 @@ def compute_mean_std(dataset, num_samples=200):
 #print("Train mean:", train_mean)
 #print("Train std:", train_std)
 
+train_mean = np.array([344.37332, 419.62582, 599.5149, 577.9469,
+                       940.35547, 1804.2218, 2096.4666, 2252.1025,
+                       2296.7737, 2302.6838, 1628.6593, 1028.488],
+                      dtype=np.float32)
+train_std  = np.array([430.6854, 470.55728, 503.29114, 598.5436,
+                       658.99994, 1042.0695, 1221.3387, 1316.3477,
+                       1301.1089, 1258.8138, 1045.6333,  798.5746],
+                      dtype=np.float32)
 # --- Final transform with normalization using train stats ---
 class NormalizeWithStats:
     def __init__(self, mean, std):
@@ -255,6 +263,6 @@ class NormalizeWithStats:
 transform = transforms.Compose([
     transforms.Resize((128, 128)),
     SelectChannels(),
-    #NormalizeWithStats(train_mean, train_std), #TODO add normalisation
+    NormalizeWithStats(train_mean, train_std),
 ])
 

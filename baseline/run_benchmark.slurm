@@ -3,7 +3,7 @@
 #SBATCH --gres=gpu:1                 # Request one GPU
 #SBATCH --cpus-per-task=4            # CPU cores per task
 #SBATCH --mem=72G                    # Memory update if necessary
-#SBATCH --time=02:00:00              # Time limit
+#SBATCH --time=07:00:00              # Time limit
 #SBATCH --output=log/pytorch_job_%j.out  # Standard output log (%j is the job ID)
 #SBATCH --error=log/pytorch_job_%j.err   # Standard error log
 
