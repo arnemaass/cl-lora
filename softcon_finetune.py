@@ -118,7 +118,7 @@ def load_country_train_val(
     return train_ds, val_ds
 
 # --- Usage: get train/val splits for a country ---
-ds_train, ds_val = load_country_train_val("Ireland", n_samples=100, seed=seed)
+ds_train, ds_val = load_country_train_val("Ireland", n_samples=1000, seed=seed)
 
 # DataLoaders for train and validation
 train_loader = DataLoader(ds_train, batch_size=32, shuffle=True, num_workers=4)
@@ -256,6 +256,6 @@ with open(log_file, mode='a', newline='') as f:
         writer.writerow([epoch+1, avg_train_loss, train_acc, avg_val_loss, val_acc])
 
 # Save model
-save_path = "/faststorage/softcon/finetuning/ireland_softcon.pth"
+save_path = "/faststorage/softcon/finetuning/ireland.pth"
 torch.save(lora_with_head.state_dict(), save_path)
 print(f"Model saved to {save_path}")
