@@ -11,6 +11,12 @@ from configilm import util
 from configilm.extra.DataSets import BENv2_DataSet
 from configilm.extra.DataModules import BENv2_DataModule
 from tqdm import tqdm
+from sklearn.metrics import average_precision_score
+import warnings
+from sklearn.exceptions import UndefinedMetricWarning
+
+# at the top of your script/notebook
+warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
 
 import os
 
@@ -102,13 +108,13 @@ def load_model(r=4):
 
     return lora_model
 
-def train_model_replay(lora_model,train_loader,val_loader,epochs=25):
+def train_model_replay(lora_model,train_loader,val_loader,epochs=25,lr=1e-4):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     lora_model.to(device)
     # --- Training loop ---
     criterion = nn.BCEWithLogitsLoss()
-    optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, lora_model.parameters()), lr=1e-4)
+    optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, lora_model.parameters()), lr=lr)
 
     with open(log_file, mode='a', newline='') as f:
         writer = csv.writer(f)
@@ -177,34 +183,51 @@ def train_model_replay(lora_model,train_loader,val_loader,epochs=25):
 def train_model_no_replay():
     pass #NOTE we can use the replay none
 
-def eval_model(lora_model,test_loader):
+
+
+def eval_model(lora_model, test_loader):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     lora_model.to(device)
-    criterion = nn.BCEWithLogitsLoss()
-
-    # Validation loss
     lora_model.eval()
-    val_loss = 0
-    val_total = 0
+
+    all_labels = []
+    all_scores = []
     val_correct = 0
+    val_total = 0
+
     with torch.no_grad():
         for imgs, labels in test_loader:
-            imgs, labels = imgs.to(device), labels.to(device)
-            if labels.dtype != torch.float:
-                labels = labels.float()
-            outputs = lora_model(imgs)
-            loss = criterion(outputs, labels)
-            val_loss += loss.item()
+            imgs, labels = imgs.to(device), labels.to(device).float()
 
-            pred_probs = torch.sigmoid(outputs)  # shape: [batch_size, num_classes]
-            predicted = (pred_probs > 0.5).float()  # shape: [batch_size, num_classes]
-            # Accuracy: 可以用 total correct predictions
-            val_correct += (predicted == labels).sum().item()
-            val_total += labels.numel()
-    avg_val_loss = val_loss / len(test_loader)
+            # forward
+            outputs = lora_model(imgs)              # raw logits, shape [B, C]
+            probs   = torch.sigmoid(outputs)        # probabilities [0,1]
+
+            # accumulate for AP computation
+            all_scores.append(probs.cpu())
+            all_labels.append(labels.cpu())
+
+            # for accuracy
+            preds = (probs > 0.5).float()
+            val_correct += (preds == labels).sum().item()
+            val_total   += labels.numel()
+
+    # stack everything
+    all_scores = torch.cat(all_scores, dim=0).numpy()  # shape [N, C]
+    all_labels = torch.cat(all_labels, dim=0).numpy()  # shape [N, C]
+
+    # average-precision scores
+    micro_ap = average_precision_score(all_labels, all_scores, average='micro')
+    macro_ap = average_precision_score(all_labels, all_scores, average='macro')
+
+    # accuracy
     val_acc = 100. * val_correct / val_total
 
-    return {'accuracy': val_acc}
+    return {
+        'micro_ap': micro_ap,
+        'macro_ap': macro_ap,
+        'accuracy': val_acc
+    }
 
 # --- Normalization function as provided ---
 class SelectChannels:

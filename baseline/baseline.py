@@ -133,14 +133,15 @@ def test_continual_learning(
     seed = params.get('seed', 0)
     batch_size = params.get('batch_size', 16)
     num_workers = params.get('num_workers', 4)
-    print(countries)
+    epoch = params.get('epoch', 15)
+    lr = float(params.get('lr', 1e-4))
 
     train_sets, val_sets = get_datasets(countries, permutation, split='train',
                               img_size=params.get('img_size', (12, 128, 128)),
                               include_snowy=params.get('include_snowy', False),
                               include_cloudy=params.get('include_cloudy', False),
                               samples_per_country=train_samples,
-                              seed=seed)
+                              seed=seed, frac=0.9)
     test_sets, _ = get_datasets(countries, permutation, split='test',
                              img_size=params.get('img_size', (12, 128, 128)),
                              include_snowy=params.get('include_snowy', False),
@@ -186,7 +187,7 @@ def test_continual_learning(
         #model = load_model(r=4)
         # Train
         start_train = time.time()
-        model = train_model_replay(model,train_loader,val_loader,epochs=15)
+        model = train_model_replay(model,train_loader,val_loader,epochs=epoch,lr=lr)
         train_time = time.time() - start_train
         log.info(f"Training time: {train_time:.2f}s")
 
@@ -244,6 +245,10 @@ def test_continual_learning_no_replay(
     seed = params.get('seed', 0)
     batch_size = params.get('batch_size', 16)
     num_workers = params.get('num_workers', 4)
+    epoch = params.get('epoch', 15)
+    lr = float(params.get('lr', 1e-4))
+
+
 
     train_sets, val_sets = get_datasets(countries, permutation, split='train',
                                         img_size=params.get('img_size', (12, 128, 128)),
@@ -290,7 +295,7 @@ def test_continual_learning_no_replay(
 
         # Train
         start_train = time.time()
-        model = train_model_replay(model,train_loader,val_loader,epochs=15)
+        model = train_model_replay(model,train_loader,val_loader,epochs=epoch,lr=lr)
         train_time = time.time() - start_train
         log.info(f"Training time: {train_time:.2f}s")
 
@@ -352,16 +357,24 @@ def main_from_config(config_path: str) -> pd.DataFrame:
 
 
 def setup_logging():
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, 
+        format="%(asctime)s %(levelname)s %(message)s"
+    )
     logging.info("Logger initialized")
-
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", "-c", required=True)
     args = parser.parse_args()
+
     setup_logging()
-    logging.info(f"Config: {args.config}")
+    logging.info(f"Config path: {args.config}")
+
+    # ← simple dump of every line in the config into the log
+    with open(args.config, "r", encoding="utf-8") as f:
+        logging.info("Config file contents:\n%s", f.read())
+
     print(main_from_config(args.config))
 
 if __name__ == "__main__":

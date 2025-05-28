@@ -3,12 +3,10 @@
 # Test-Typ: 'replay' oder 'no_replay'
 test_type: no_replay
 
-# Modell-Definition
+# Modell-Definition , NOT USED
 model_module: my_models                   # Python-Modul mit Modell-Factory
 model_factory: get_model                  # Factory-Funktion
-model_params:
-  learning_rate: 0.001
-  hidden_units: [128, 64]
+
 
 # Parameter für die Tests
 params:
@@ -21,23 +19,22 @@ params:
   permutation: [0, 1, 2, 3, 4]                # Reihenfolge der Länder-Indices
 
   # Anzahl der zufällig gezogenen Samples pro Land
-  train_samples: 1000 #22482
-  test_samples: 100 #8176
+  train_samples: 5000 #22482
+  test_samples: 500 #8176
   seed: 42                              # Seed für Reproduzierbarkeit
 
   # DataLoader-Parameter
   batch_size: 16
-  num_workers: 8
+  num_workers: 4
+  epoch: 15
+  lr: 1e-4
+
 
   # Bildgröße und Filteroptionen
   img_size: [12, 128, 128]
   include_snowy: false
   include_cloudy: false
 
-  # Training-spezifische Fit-Argumente
-  fit_kwargs:
-    epochs: 10
-    batch_size: 16
 
   save_dir: ./saved_models                # Verzeichnis zum Speichern der Modelle
   log_every_step: true
