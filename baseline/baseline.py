@@ -11,7 +11,8 @@ import yaml
 import argparse
 from torch.utils.data import DataLoader, ConcatDataset
 from sklearn.metrics import accuracy_score
-from SpectralGPT import *
+# from SpectralGPT import *
+# from SoftCon import *  
 
 
 # --- DataSet factory based on configilm / BENv2 ---
@@ -335,22 +336,28 @@ def main_from_config(config_path: str) -> pd.DataFrame:
     with open(config_path, 'r') as f:
         cfg = yaml.safe_load(f) if config_path.endswith(('.yml', '.yaml')) else json.load(f)
     from importlib import import_module
+
+    # Dynamically import the specified module
+    model_module_name = cfg.get('model_module', 'SpectralGPT')  # Default to 'SpectralGPT'
+    logging.info(f"Using model module: {model_module_name}")
+    model_module = import_module(model_module_name)
+
+    # Import everything from the module into the global namespace
+    globals().update({name: getattr(model_module, name) for name in dir(model_module) if not name.startswith("_")})
+
     params = cfg['params']
-    # get_dataset und metrics_fn unverändert: nutzen get_datasets intern
+
+    # Dynamically set metrics function if specified
     if isinstance(params.get('metrics_fn'), str):
         mod, fn = params['metrics_fn'].rsplit(':', 1)
         params['metrics_fn'] = getattr(import_module(mod), fn)
 
     test_type = cfg['test_type']
     if test_type == 'replay':
-        #mod, fac = cfg['model_module'].split(':', 1)
-        #model = getattr(import_module(mod), fac)(**cfg.get('model_params', {}))
-        model = load_model(4)
-        return test_continual_learning(model,params)
+        model = load_model(4)  # Dynamically call load_model from the imported module
+        return test_continual_learning(model, params)
     elif test_type == 'no_replay':
-        #mod, cls = cfg['model_module'].split(':', 1)
-        #model_class = getattr(import_module(mod), cls)
-        model = load_model(4)
+        model = load_model(4)  # Dynamically call load_model from the imported module
         return test_continual_learning_no_replay(model, params)
     else:
         raise ValueError(f"Unknown test_type: {test_type}")
