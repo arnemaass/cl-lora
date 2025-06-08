@@ -3,15 +3,18 @@ import random
 import pandas as pd
 import numpy as np
 import torch
+import os
 import torch.nn as nn
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader
 from torchvision import transforms
 import csv
 from tqdm import tqdm
 
 from configilm import util
 from configilm.extra.DataSets import BENv2_DataSet
-from configilm.extra.DataModules import BENv2_DataModule
+
+# Disable xFormers for this script
+os.environ["XFORMERS_DISABLED"] = "1"
 
 
 # Set random seeds for reproducibility
@@ -22,15 +25,15 @@ torch.manual_seed(seed)
 torch.cuda.manual_seed_all(seed)
 generator = torch.Generator().manual_seed(seed)
 
-# SOFTCON PRETRAINING band information
-ALL_BANDS_S2_L2A = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B9', 'B11', 'B12']
+# SOFTCON PRETRAINING band information # Added B10 as a zero-initialized channel
+ALL_BANDS_S2_L2A = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B9', 'B10', 'B11', 'B12']
 
 # Band statistics: mean & std (calculated from 50k data)
 S2A_MEAN = [752.40087073, 884.29673756, 1144.16202635, 1297.47289228, 1624.90992062, 2194.6423161, 
-           2422.21248945, 2517.76053101, 2581.64687018, 2645.51888987, 2368.51236873, 1805.06846033]
+           2422.21248945, 2517.76053101, 2581.64687018 , 2645.51888987, 0 , 2368.51236873, 1805.06846033]
 
 S2A_STD = [1108.02887453, 1155.15170768, 1183.6292542, 1368.11351514, 1370.265037, 1355.55390699, 
-          1416.51487101, 1474.78900051, 1439.3086061, 1582.28010962, 1455.52084939, 1343.48379601]
+          1416.51487101, 1474.78900051, 1439.3086061, 1582.28010962, 1, 1455.52084939, 1343.48379601]
 
 datapath = {
     "images_lmdb": "/faststorage/BigEarthNet-V2/BigEarthNet-V2-LMDB",
@@ -41,8 +44,7 @@ datapath = {
 util.MESSAGE_LEVEL = util.MessageLevel.INFO  # use INFO to see all messages
 
 
-
-# Remove the old normalize function and replace with standard normalization
+# Use Pretrainining Statistics 
 class NormalizeWithStats:
     def __init__(self, mean, std):
         self.mean = np.array(mean, dtype=np.float32).reshape(-1, 1, 1)  # Shape: (C, 1, 1)
@@ -67,9 +69,35 @@ class DropSARChannels:
         # Drop first 2 channels (VV, VH) - keep channels 2-13 (Sentinel-2 bands)
         return img[2:, :, :]
 
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),
+class ZeroInitializeB10:
+    """Zero-initialize the B10 layer in the input image."""
+    def __call__(self, img):
+        b10 = torch.zeros((1, img.shape[1], img.shape[2]))  # Shape: [1, H, W]
+        img = torch.cat([img[:9, :, :], b10, img[9:, :, :]], dim=0)
+        return img
+
+# Transformation pipeline for training (with augmentations)
+train_transform = transforms.Compose([
+    transforms.Resize((224, 224)),  # Resize to 224x224
     DropSARChannels(),  # Drop SAR bands, keep only Sentinel-2 bands
+    ZeroInitializeB10(),  # Zero-initialize the B10 layer
+    transforms.RandomHorizontalFlip(),  # Random horizontal flip
+    transforms.RandomVerticalFlip(),  # Random vertical flip
+    transforms.RandomChoice([  # Randomly apply one of the rotations
+        transforms.RandomRotation(degrees=(0, 0)),  # No rotation
+        transforms.RandomRotation(degrees=(90, 90)),  # Rotate 90 degrees
+        transforms.RandomRotation(degrees=(180, 180)),  # Rotate 180 degrees
+        transforms.RandomRotation(degrees=(270, 270)),  # Rotate 270 degrees
+    ]),
+    transforms.RandomResizedCrop(size=(224, 224), scale=(0.8, 1.0)),  # Random resized crop
+    NormalizeWithStats(train_mean, train_std),  # Standard normalization with S2A stats
+])
+
+# Transformation pipeline for validation (no augmentations)
+val_transform = transforms.Compose([
+    transforms.Resize((224, 224)),  # Resize to 224x224
+    DropSARChannels(),  # Drop SAR bands, keep only Sentinel-2 bands
+    ZeroInitializeB10(),  # Zero-initialize the B10 layer
     NormalizeWithStats(train_mean, train_std),  # Standard normalization with S2A stats
 ])
 
@@ -103,7 +131,7 @@ def load_country_train_val(
     split_at = int(n_samples * train_frac)
     train_ids = set(sampled[:split_at])
     val_ids   = set(sampled[split_at:])
-    def _make_ds(keep_ids):
+    def _make_ds(keep_ids, transform):
         return BENv2_DataSet.BENv2DataSet(
             data_dirs=datapath,
             img_size=img_size,
@@ -113,8 +141,8 @@ def load_country_train_val(
             patch_prefilter=lambda pid: pid in keep_ids,
             transform=transform,
         )
-    train_ds = _make_ds(train_ids)
-    val_ds   = _make_ds(val_ids)
+    train_ds = _make_ds(train_ids, train_transform)
+    val_ds   = _make_ds(val_ids, val_transform)
     return train_ds, val_ds
 
 # --- Usage: get train/val splits for a country ---
@@ -131,36 +159,26 @@ from models.dinov2 import vision_transformer as dinov2_vitb
 model_vitb14 = dinov2_vitb.__dict__['vit_base'](
     img_size=224,
     patch_size=14,
-    in_chans=12,  #
+    in_chans=13,  #
     block_chunks=0,
     init_values=1e-4,
     num_register_tokens=0,
 )
 
 # Load pretrained weights excluding patch embedding layer
-ckpt_vitb14 = torch.load('/faststorage/softcon/pretrained/B13_vitb14_softcon_enc.pth', map_location='cpu')
+ckpt_vitb14 = torch.load('/faststorage/softcon/pretrained/B13_vitb14_softcon_enc.pth', map_location='cpu', weights_only=True)
 
-# Exclude patch embedding weights due to channel mismatch (12 vs 13)
+# Load state dict
 model_state = model_vitb14.state_dict()
-pretrained_state = {k: v for k, v in ckpt_vitb14.items() 
-                   if k not in ['patch_embed.proj.weight', 'patch_embed.proj.bias']}
-model_state.update(pretrained_state)
 model_vitb14.load_state_dict(model_state)
 
-print("✅ Loaded pretrained weights (excluding patch embedding due to channel mismatch: 12 vs 13)")
-print("✅ Patch embedding layer randomly initialized for 12 Sentinel-2 bands")
 print(model_vitb14)
 
 # Wrap with LoRA
 sys.path.append('/home/arne/LoRA-ViT')
 from lora import LoRA_ViT_timm
 
-# Check if the LoRA implementation has unnecessary layers
 lora_model = LoRA_ViT_timm(model_vitb14, num_classes = 0 , r=4, alpha=16)
-
-# Remove the unused proj_3d layer if it exists
-if hasattr(lora_model, 'proj_3d'):
-    delattr(lora_model, 'proj_3d')
 
 # Add classification head
 num_classes = 19

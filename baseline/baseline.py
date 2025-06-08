@@ -10,9 +10,12 @@ import json
 import yaml
 import argparse
 from torch.utils.data import DataLoader, ConcatDataset
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import average_precision_score
 # from SpectralGPT import *
 # from SoftCon import *  
+
+
+os.environ["XFORMERS_DISABLED"] = "1" # for CPU testing
 
 
 # --- DataSet factory based on configilm / BENv2 ---
@@ -34,57 +37,58 @@ def load_country_train_val(
     img_size=(14, 120, 120),
     include_snowy=False,
     include_cloudy=False,
-    split = "train",
-    frac = 0.8
+    split="train",
+    frac=0.8,
+    model_module=None,  # Added argument to specify the model module
 ):
     """
-    Samples n_samples patches from the TRAIN split of `country`,
-    then does an internal 80/20 train/val split (both from the original TRAIN data).
-
-    Returns (train_ds, val_ds).
-
+    Load country-specific train/val datasets. Dynamically adjusts transformations and img_size
+    based on the model_module argument.
     """
+    # Dynamically adjust transformations and img_size
+    if model_module == "SoftCon":
+        transform = train_transform if split == "train" else val_transform
+        img_size = (14, 224, 224)  # SoftCon-specific img_size
+    elif model_module == "SpectralGPT":
+        transform = train_transform if split == "train" else val_transform
+        img_size = (12, 128, 128)  # SpectralGPT-specific img_size
+    else:
+        raise ValueError(f"Unknown model_module: {model_module}")
+
     meta = pd.read_parquet(datapath["metadata_parquet"])
 
-    # 2) restrict metadata to train-split patches for this country
+    # Filter metadata based on the split
     mask = (meta.country == country) & (meta.split == split)
     available = meta.loc[mask, "patch_id"].tolist()
     if not available:
-        raise ValueError(f"No TRAIN patches found for country={country!r}")
+        raise ValueError(f"No {split.upper()} patches found for country={country!r}")
     if n_samples > len(available):
-        raise ValueError(
-            f"Requested {n_samples} samples but only {len(available)} TRAIN patches available for {country!r}"
+        print(
+            f"Warning: Requested {n_samples} samples but only {len(available)} available. Using all."
         )
+        n_samples = len(available)
 
-    # 3) pick your N
     rng = random.Random(seed)
     sampled = rng.sample(available, k=n_samples)
 
-    # 4) 80/20 split
-    # 4) 80/20 split
     split_at = int(n_samples * frac)
     train_ids = set(sampled[:split_at])
     val_ids = set(sampled[split_at:])
-    ids = set(sampled[:])
 
-    # 5) helper to build a dataset that still uses split="train"
     def _make_ds(keep_ids):
         return BENv2DataSet(
             data_dirs=datapath,
             img_size=img_size,
-            split=split,            # draw only from the original train partition
+            split=split,
             include_snowy=include_snowy,
             include_cloudy=include_cloudy,
             patch_prefilter=lambda pid: pid in keep_ids,
-            transform=transform
+            transform=transform,
         )
 
-    ds_train = _make_ds(train_ids)
-    ds_val =  _make_ds(val_ids)
-
-    #ds = _make_ds(ids)
-    return ds_train, ds_val
-
+    train_ds = _make_ds(train_ids)
+    val_ds = _make_ds(val_ids)
+    return train_ds, val_ds
 
 
 def get_datasets(
@@ -96,24 +100,36 @@ def get_datasets(
     include_cloudy: bool = False,
     samples_per_country: int = None,
     seed: int = 0,
-    frac =0.8
+    frac=0.8,
+    model_module=None,  # Added argument to specify the model module
 ) -> Tuple[List[BENv2DataSet], List[BENv2DataSet]]:
     train_datasets: List[BENv2DataSet] = []
     val_datasets: List[BENv2DataSet] = []
 
     for idx in permutation:
         country = countries[idx]
-        train_ds, val_ds = load_country_train_val(country, samples_per_country, 123, split=split,frac=frac)
+        train_ds, val_ds = load_country_train_val(
+            country,
+            samples_per_country,
+            seed,
+            img_size=img_size,
+            include_snowy=include_snowy,
+            include_cloudy=include_cloudy,
+            split=split,
+            frac=frac,
+            model_module=model_module,  # Pass model_module argument
+        )
         train_datasets.append(train_ds)
         val_datasets.append(val_ds)
 
     return train_datasets, val_datasets
 
+
 def default_metrics(y_true: List[Any], y_pred: List[Any]) -> Dict[str, float]:
     """
-    Default evaluation metric: wraps sklearn.metrics.accuracy_score.
+    Default evaluation metric: wraps sklearn.metrics.average_precision_score (micro average).
     """
-    return {'accuracy': accuracy_score(y_true, y_pred)}
+    return {'micro_AP': average_precision_score(y_true, y_pred, average='micro')}
 
 
 def test_continual_learning(
@@ -248,55 +264,56 @@ def test_continual_learning_no_replay(
     num_workers = params.get('num_workers', 4)
     epoch = params.get('epoch', 15)
     lr = float(params.get('lr', 1e-4))
+    model_module = params.get('model_module')  # Extract model_module from params
 
-
-
-    train_sets, val_sets = get_datasets(countries, permutation, split='train',
-                                        img_size=params.get('img_size', (12, 128, 128)),
-                                        include_snowy=params.get('include_snowy', False),
-                                        include_cloudy=params.get('include_cloudy', False),
-                                        samples_per_country=train_samples,
-                                        seed=seed)
-    test_sets, _ = get_datasets(countries, permutation, split='test',
-                                img_size=params.get('img_size', (12, 128, 128)),
-                                include_snowy=params.get('include_snowy', False),
-                                include_cloudy=params.get('include_cloudy', False),
-                                samples_per_country=test_samples,
-                                seed=seed,
-                                frac=1)
+    train_sets, val_sets = get_datasets(
+        countries,
+        permutation,
+        split='train',
+        img_size=params.get('img_size', (12, 128, 128)),
+        include_snowy=params.get('include_snowy', False),
+        include_cloudy=params.get('include_cloudy', False),
+        samples_per_country=train_samples,
+        seed=seed,
+        model_module=model_module  # Pass model_module explicitly
+    )
+    test_sets, _ = get_datasets(
+        countries,
+        permutation,
+        split='test',
+        img_size=params.get('img_size', (12, 128, 128)),
+        include_snowy=params.get('include_snowy', False),
+        include_cloudy=params.get('include_cloudy', False),
+        samples_per_country=test_samples,
+        seed=seed,
+        frac=1,
+        model_module=model_module  # Pass model_module explicitly
+    )
 
     save_dir = params.get('save_dir')
     metrics_fn = params.get('metrics_fn', default_metrics)
 
-    if save_dir: os.makedirs(save_dir, exist_ok=True)
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
 
     results = []
     prev_model_path = None
-    for step in range(1, len(permutation)+1):
+    for step in range(1, len(permutation) + 1):
         seen_idx = permutation[:step]
         seen_countries = [countries[i] for i in seen_idx]
         log.info(f"Step {step}: Countries {seen_countries}")
 
-        # ToDO load lora weights from last step
-        """
-        # Init/load
-        if step == 1: #ToDO load lora weights from last step
-            model = model_class()
-        else:
-            model = joblib.load(prev_model_path)
-        """
-
         # Train on new country DataLoader
-        ds_new = train_sets[step-1]
+        ds_new = train_sets[step - 1]
         train_loader = DataLoader(ds_new, batch_size=batch_size,
                                   shuffle=True, num_workers=num_workers)
-        ds_new_val = val_sets[step-1]
+        ds_new_val = val_sets[step - 1]
         val_loader = DataLoader(ds_new_val, batch_size=batch_size,
                                 shuffle=False, num_workers=num_workers)
 
         # Train
         start_train = time.time()
-        model = train_model_replay(model,train_loader,val_loader,epochs=epoch,lr=lr)
+        model = train_model_replay(model, train_loader, val_loader, epochs=epoch, lr=lr)
         train_time = time.time() - start_train
         log.info(f"Training time: {train_time:.2f}s")
 
@@ -346,6 +363,10 @@ def main_from_config(config_path: str) -> pd.DataFrame:
     globals().update({name: getattr(model_module, name) for name in dir(model_module) if not name.startswith("_")})
 
     params = cfg['params']
+
+    # Add model_module to params
+    params['model_module'] = model_module_name
+
 
     # Dynamically set metrics function if specified
     if isinstance(params.get('metrics_fn'), str):
