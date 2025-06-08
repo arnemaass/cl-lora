@@ -15,7 +15,7 @@ from sklearn.metrics import average_precision_score
 # from SoftCon import *  
 
 
-os.environ["XFORMERS_DISABLED"] = "1" # for CPU testing
+# os.environ["XFORMERS_DISABLED"] = "1" # for CPU testing
 
 
 # --- DataSet factory based on configilm / BENv2 ---

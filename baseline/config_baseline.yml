@@ -3,10 +3,8 @@
 # Test-Typ: 'replay' oder 'no_replay'
 test_type: no_replay
 
-# Modell-Definition , NOT USED
-model_module: my_models                   # Python-Modul mit Modell-Factory
-model_factory: get_model                  # Factory-Funktion
-
+# Modell-Definition
+model_module: SpectralGPT  # Options: 'SpectralGPT' or 'SoftCon'
 
 # Parameter für die Tests
 params:
@@ -19,12 +17,12 @@ params:
   permutation: [0, 1, 2, 3, 4]                # Reihenfolge der Länder-Indices
 
   # Anzahl der zufällig gezogenen Samples pro Land
-  train_samples: 5000 #22482
-  test_samples: 500 #8176
+  train_samples: 10 # 5000 #22482
+  test_samples: 5 # 500 #8176
   seed: 42                              # Seed für Reproduzierbarkeit
 
   # DataLoader-Parameter
-  batch_size: 16
+  batch_size: 32
   num_workers: 4
   epoch: 15
   lr: 1e-4

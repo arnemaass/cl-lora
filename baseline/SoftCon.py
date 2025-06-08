@@ -26,8 +26,6 @@ generator = torch.Generator().manual_seed(seed)
 
 util.MESSAGE_LEVEL = util.MessageLevel.INFO  # use INFO to see all messages
 
-os.environ["XFORMERS_DISABLED"] = "1" # for CPU testing
-
 
 # SOFTCON PRETRAINING band information # Added B10 as a zero-initialized channel
 ALL_BANDS_S2_L2A = [
