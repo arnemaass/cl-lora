@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, random_split
 from torchvision import transforms
+import pytorch_lightning as L
 
 from configilm import util
 from configilm.extra.DataSets import BENv2_DataSet
@@ -93,7 +94,6 @@ def load_model(r=4):
     # --- Model setup ---
 
     # load pretrained weights
-    num_classes = 19
     model = vit_base_patch8_128(sep_pos_embed=True, num_classes=19)
     model = load_mae_encoder(model, dir_pretrained)
 
@@ -120,95 +120,67 @@ def load_model(r=4):
 
     return lora_model
 
+# --- Lightning Module ---
+class SpectralGPTLightningModule(L.LightningModule):
+    def __init__(self, model, num_classes, lr=1e-4):
+        super().__init__()
+        self.model = model
+        self.criterion = nn.BCEWithLogitsLoss()
+        self.lr = lr
+        self.num_classes = num_classes
 
+    def forward(self, x):
+        return self.model(x)
+
+    def training_step(self, batch, batch_idx):
+        imgs, labels = batch
+        outputs = self(imgs)
+        loss = self.criterion(outputs, labels.float())
+        preds = (torch.sigmoid(outputs) > 0.5).float()
+        acc = (preds == labels).float().mean()
+        self.log("train_loss", loss, prog_bar=True)
+        self.log("train_acc", acc, prog_bar=True)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        imgs, labels = batch
+        outputs = self(imgs)
+        loss = self.criterion(outputs, labels.float())
+        preds = (torch.sigmoid(outputs) > 0.5).float()
+        acc = (preds == labels).float().mean()
+        self.log("val_loss", loss, prog_bar=True)
+        self.log("val_acc", acc, prog_bar=True)
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters(), lr=self.lr)
+
+
+# --- Wrap train_model_replay with Lightning ---
 def train_model_replay(lora_model, train_loader, val_loader, epochs=25, lr=1e-4):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    lora_model.to(device)
+    """
+    Train the SpectralGPT model using PyTorch Lightning.
+    """
+    # Wrap the model in a LightningModule
+    num_classes = 19  # Update this based on your dataset
+    pl_model = SpectralGPTLightningModule(lora_model, num_classes=num_classes, lr=lr)
 
-    # --- Training loop ---
-    criterion = nn.BCEWithLogitsLoss()
-    optimizer = torch.optim.Adam(
-        filter(lambda p: p.requires_grad, lora_model.parameters()), lr=lr
+    # Define PyTorch Lightning Trainer
+    trainer = L.Trainer(
+        max_epochs=epochs,
+        accelerator="auto",  # Automatically use GPU if available
+        log_every_n_steps=10,
+        default_root_dir="./",  # Change this to your desired save directory
     )
 
-    with open(log_file, mode="a", newline="") as f:
-        writer = csv.writer(f)
-        if first_time:
-            writer.writerow(
-                ["epoch", "train_loss", "train_micro_ap", "val_loss", "val_micro_ap"]
-            )
+    # Train the model
+    trainer.fit(pl_model, train_loader, val_loader)
 
-        for epoch in range(epochs):
-            lora_model.train()
-            total_loss = 0
-            all_labels = []
-            all_scores = []
-            loop = tqdm(train_loader, desc=f"Epoch [{epoch + 1}/{epochs}]", leave=True)
+    # Save the trained model
+    save_path = "./trained_model.pt"
+    torch.save(pl_model.state_dict(), save_path)
+    print(f"Model saved to {save_path}")
 
-            for imgs, labels in loop:
-                imgs, labels = imgs.to(device), labels.to(device)
-                optimizer.zero_grad()
-                outputs = lora_model(imgs)
-                if labels.dtype != torch.float:
-                    labels = labels.float()
-                loss = criterion(outputs, labels)
-                loss.backward()
-                optimizer.step()
-                total_loss += loss.item()
-
-                # Collect predictions and labels for micro AP computation
-                pred_probs = torch.sigmoid(outputs)  # Probabilities [0, 1]
-                all_scores.append(pred_probs.detach().cpu())
-                all_labels.append(labels.detach().cpu())
-
-                # Update tqdm bar
-                loop.set_postfix(loss=f"{loss.item():.4f}")
-
-            # Compute micro AP for training
-            all_scores = torch.cat(all_scores, dim=0).numpy()  # Shape [N, C]
-            all_labels = torch.cat(all_labels, dim=0).numpy()  # Shape [N, C]
-            train_micro_ap = average_precision_score(
-                all_labels, all_scores, average="micro"
-            )
-            avg_train_loss = total_loss / len(train_loader)
-
-            # Validation loop
-            lora_model.eval()
-            val_loss = 0
-            val_labels = []
-            val_scores = []
-            with torch.no_grad():
-                for imgs, labels in val_loader:
-                    imgs, labels = imgs.to(device), labels.to(device)
-                    if labels.dtype != torch.float:
-                        labels = labels.float()
-                    outputs = lora_model(imgs)
-                    loss = criterion(outputs, labels)
-                    val_loss += loss.item()
-
-                    # Collect predictions and labels for micro AP computation
-                    pred_probs = torch.sigmoid(outputs)  # Probabilities [0, 1]
-                    val_scores.append(pred_probs.cpu())
-                    val_labels.append(labels.cpu())
-
-            # Compute micro AP for validation
-            val_scores = torch.cat(val_scores, dim=0).numpy()  # Shape [N, C]
-            val_labels = torch.cat(val_labels, dim=0).numpy()  # Shape [N, C]
-            val_micro_ap = average_precision_score(
-                val_labels, val_scores, average="micro"
-            )
-            avg_val_loss = val_loss / len(val_loader)
-
-            # Log results
-            print(
-                f"Epoch {epoch + 1}/{epochs}, Train Loss: {avg_train_loss:.4f}, Train Micro AP: {train_micro_ap:.4f}, "
-                f"Val Loss: {avg_val_loss:.4f}, Val Micro AP: {val_micro_ap:.4f}"
-            )
-            writer.writerow(
-                [epoch + 1, avg_train_loss, train_micro_ap, avg_val_loss, val_micro_ap]
-            )
-
-    return lora_model
+    return pl_model
 
 
 def train_model_no_replay():

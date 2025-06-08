@@ -15,6 +15,7 @@ from tqdm import tqdm
 import os
 from datetime import datetime
 import csv
+import pytorch_lightning as L
 
 # Set random seeds for reproducibility
 seed = 42
@@ -101,11 +102,11 @@ def load_softcon_encoder(model, ckpt_path):
 # --- Model Loading ---
 def load_model(r=4):
     """Load SOFTCON model with LoRA and classification head"""
-    sys.path.append('/home/arne/softcon')
+    sys.path.append("/home/arne/softcon")
     from models.dinov2 import vision_transformer as dinov2_vitb
 
     # Create model
-    model_vitb14 = dinov2_vitb.__dict__['vit_base'](
+    model_vitb14 = dinov2_vitb.__dict__["vit_base"](
         img_size=224,
         patch_size=14,
         in_chans=13,  # Sentinel-2 bands only
@@ -115,14 +116,18 @@ def load_model(r=4):
     )
 
     # Load pretrained weights
-    ckpt_vitb14 = torch.load('/faststorage/softcon/pretrained/B13_vitb14_softcon_enc.pth', map_location='cpu', weights_only=True)
+    ckpt_vitb14 = torch.load(
+        "/faststorage/softcon/pretrained/B13_vitb14_softcon_enc.pth",
+        map_location="cpu",
+        weights_only=True,
+    )
     model_state = model_vitb14.state_dict()
     model_vitb14.load_state_dict(model_state)
 
     print(model_vitb14)
 
     # Wrap with LoRA
-    sys.path.append('/home/arne/LoRA-ViT')
+    sys.path.append("/home/arne/LoRA-ViT")
     from lora import LoRA_ViT_timm
 
     lora_model = LoRA_ViT_timm(model_vitb14, num_classes=0, r=r, alpha=16)
@@ -147,59 +152,71 @@ def load_model(r=4):
     return lora_with_head
 
 
-def train_model_replay(lora_model, train_loader, val_loader, epochs=25, lr=1e-4):
-    """Train SOFTCON model (similar to SpectralGPT.py train_model_replay)"""
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    lora_model.to(device)
+# --- Lightning Module ---
+class SoftConLightningModule(L.LightningModule):
+    def __init__(self, model, embed_dim, num_classes, lr=1e-4):
+        super().__init__()
+        self.feature_extractor = model  # LoRA model (without classification head)
+        self.classifier = nn.Linear(embed_dim, num_classes)  # Classification head
+        self.criterion = nn.BCEWithLogitsLoss()
+        self.lr = lr
 
-    criterion = nn.BCEWithLogitsLoss()
-    optimizer = torch.optim.Adam(
-        filter(lambda p: p.requires_grad, lora_model.parameters()), lr=lr
-    )
+    def forward(self, x):
+        features = self.feature_extractor(x)  # Extract features
+        return self.classifier(features)  # Pass features through the classification head
 
-    with open(log_file, mode="a", newline="") as f:
-        writer = csv.writer(f)
-        if first_time:
-            writer.writerow(["epoch", "train_loss", "train_acc", "val_loss", "val_acc"])
+    def training_step(self, batch, batch_idx):
+        imgs, labels = batch
+        outputs = self(imgs)
+        loss = self.criterion(outputs, labels.float())
+        
+        # Compute probabilities and micro AP
+        probs = torch.sigmoid(outputs)
+        micro_ap = average_precision_score(labels.cpu().numpy(), probs.detach().cpu().numpy(), average="micro")
+        
+        # Log loss and micro AP
+        self.log("train_loss", loss, prog_bar=True)
+        self.log("train_micro_ap", micro_ap, prog_bar=True)
+        return loss
 
-        for epoch in range(epochs):
-            lora_model.train()
-            total_loss = 0
-            all_labels = []
-            all_scores = []
-            loop = tqdm(train_loader, desc=f"Epoch [{epoch + 1}/{epochs}]", leave=True)
+    def validation_step(self, batch, batch_idx):
+        imgs, labels = batch
+        outputs = self(imgs)
+        loss = self.criterion(outputs, labels.float())
+        
+        # Compute probabilities and micro AP
+        probs = torch.sigmoid(outputs)
+        micro_ap = average_precision_score(labels.cpu().numpy(), probs.detach().cpu().numpy(), average="micro")
+        
+        # Log loss and micro AP
+        self.log("val_loss", loss, prog_bar=True)
+        self.log("val_micro_ap", micro_ap, prog_bar=True)
 
-            for imgs, labels in loop:
-                imgs, labels = imgs.to(device), labels.to(device)
-                optimizer.zero_grad()
-                outputs = lora_model(imgs)
-                if labels.dtype != torch.float:
-                    labels = labels.float()
-                loss = criterion(outputs, labels)
-                loss.backward()
-                optimizer.step()
-                total_loss += loss.item()
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters(), lr=self.lr)
 
-                # Collect predictions and labels for micro AP computation
-                pred_probs = torch.sigmoid(outputs)  # Probabilities [0, 1]
-                all_scores.append(pred_probs.detach().cpu())
-                all_labels.append(labels.detach().cpu())
 
-                # Update progress bar
-                loop.set_postfix(loss=loss.item())
+# --- Wrap train_model_replay with Lightning ---
+def train_model_replay(lora_with_head, train_loader, val_loader, trainer, lr=1e-4):
+    """
+    Train the SOFTCON model using PyTorch Lightning.
+    """
+    # Extract the LoRA model (feature extractor) from the Sequential object
+    lora_model = lora_with_head[0]  # First part of the Sequential object
 
-            # Compute micro AP for the epoch
-            all_scores = torch.cat(all_scores, dim=0).numpy()  # Shape [N, C]
-            all_labels = torch.cat(all_labels, dim=0).numpy()  # Shape [N, C]
-            micro_ap = average_precision_score(all_labels, all_scores, average='micro')
+    # Wrap the model in a LightningModule
+    embed_dim = model_vitb14.embed_dim
+    pl_model = SoftConLightningModule(lora_model, embed_dim=embed_dim, num_classes=19, lr=lr)
 
-            avg_train_loss = total_loss / len(train_loader)
+    # Train the model using the provided trainer
+    trainer.fit(pl_model, train_loader, val_loader)
 
-            print(
-                f"Epoch {epoch + 1}/{epochs}, Train Loss: {avg_train_loss:.4f}, Micro AP: {micro_ap:.4f}"
-            )
+    # Save the trained model
+    save_path = os.path.join(trainer.default_root_dir, "trained_model.pt")
+    torch.save(pl_model.state_dict(), save_path)
+    print(f"Model saved to {save_path}")
 
-    return lora_model
+    return pl_model
 
 
 def train_model_no_replay():
@@ -208,7 +225,9 @@ def train_model_no_replay():
 
 
 def eval_model(lora_model, test_loader):
-    """Evaluate SOFTCON model with micro/macro AP and accuracy."""
+    """
+    Evaluate the SOFTCON model using PyTorch Lightning.
+    """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     lora_model.to(device)
     lora_model.eval()
@@ -223,8 +242,8 @@ def eval_model(lora_model, test_loader):
             imgs, labels = imgs.to(device), labels.to(device).float()
 
             # Forward pass
-            outputs = lora_model(imgs)              # Raw logits, shape [B, C]
-            probs = torch.sigmoid(outputs)          # Probabilities [0, 1]
+            outputs = lora_model(imgs)  # Raw logits, shape [B, C]
+            probs = torch.sigmoid(outputs)  # Probabilities [0, 1]
 
             # Accumulate for AP computation
             all_scores.append(probs.cpu())
@@ -240,16 +259,16 @@ def eval_model(lora_model, test_loader):
     all_labels = torch.cat(all_labels, dim=0).numpy()  # Shape [N, C]
 
     # Average-precision scores
-    micro_ap = average_precision_score(all_labels, all_scores, average='micro')
-    macro_ap = average_precision_score(all_labels, all_scores, average='macro')
+    micro_ap = average_precision_score(all_labels, all_scores, average="micro")
+    macro_ap = average_precision_score(all_labels, all_scores, average="macro")
 
     # Accuracy
     val_acc = 100.0 * val_correct / val_total
 
     return {
-        'micro_ap': micro_ap,
-        'macro_ap': macro_ap,
-        'accuracy': val_acc
+        "micro_ap": micro_ap,
+        "macro_ap": macro_ap,
+        "accuracy": val_acc,
     }
 
 
@@ -289,35 +308,47 @@ class ZeroInitializeB10:
 train_mean, train_std = np.array(S2A_MEAN), np.array(S2A_STD)
 
 # Transformation pipeline for training (with augmentations)
-train_transform = transforms.Compose([
-    transforms.Resize((224, 224)),  # Resize to 224x224
-    DropSARChannels(),  # Drop SAR bands, keep only Sentinel-2 bands
-    ZeroInitializeB10(),  # Zero-initialize the B10 layer
-    transforms.RandomHorizontalFlip(),  # Random horizontal flip
-    transforms.RandomVerticalFlip(),  # Random vertical flip
-    transforms.RandomChoice([  # Randomly apply one of the rotations
-        transforms.RandomRotation(degrees=(0, 0)),  # No rotation
-        transforms.RandomRotation(degrees=(90, 90)),  # Rotate 90 degrees
-        transforms.RandomRotation(degrees=(180, 180)),  # Rotate 180 degrees
-        transforms.RandomRotation(degrees=(270, 270)),  # Rotate 270 degrees
-    ]),
-    transforms.RandomResizedCrop(size=(224, 224), scale=(0.8, 1.0)),  # Random resized crop
-    NormalizeWithStats(train_mean, train_std),  # Standard normalization with S2A stats
-])
+train_transform = transforms.Compose(
+    [
+        transforms.Resize((224, 224)),  # Resize to 224x224
+        DropSARChannels(),  # Drop SAR bands, keep only Sentinel-2 bands
+        ZeroInitializeB10(),  # Zero-initialize the B10 layer
+        transforms.RandomHorizontalFlip(),  # Random horizontal flip
+        transforms.RandomVerticalFlip(),  # Random vertical flip
+        transforms.RandomChoice(
+            [  # Randomly apply one of the rotations
+                transforms.RandomRotation(degrees=(0, 0)),  # No rotation
+                transforms.RandomRotation(degrees=(90, 90)),  # Rotate 90 degrees
+                transforms.RandomRotation(degrees=(180, 180)),  # Rotate 180 degrees
+                transforms.RandomRotation(degrees=(270, 270)),  # Rotate 270 degrees
+            ]
+        ),
+        transforms.RandomResizedCrop(
+            size=(224, 224), scale=(0.8, 1.0)
+        ),  # Random resized crop
+        NormalizeWithStats(
+            train_mean, train_std
+        ),  # Standard normalization with S2A stats
+    ]
+)
 
 # Transformation pipeline for validation (no augmentations)
-val_transform = transforms.Compose([
-    transforms.Resize((224, 224)),  # Resize to 224x224
-    DropSARChannels(),  # Drop SAR bands, keep only Sentinel-2 bands
-    ZeroInitializeB10(),  # Zero-initialize the B10 layer
-    NormalizeWithStats(train_mean, train_std),  # Standard normalization with S2A stats
-])
+val_transform = transforms.Compose(
+    [
+        transforms.Resize((224, 224)),  # Resize to 224x224
+        DropSARChannels(),  # Drop SAR bands, keep only Sentinel-2 bands
+        ZeroInitializeB10(),  # Zero-initialize the B10 layer
+        NormalizeWithStats(
+            train_mean, train_std
+        ),  # Standard normalization with S2A stats
+    ]
+)
 
 # --- Model setup ---
-sys.path.append('/home/arne/softcon')
+sys.path.append("/home/arne/softcon")
 from models.dinov2 import vision_transformer as dinov2_vitb
 
-model_vitb14 = dinov2_vitb.__dict__['vit_base'](
+model_vitb14 = dinov2_vitb.__dict__["vit_base"](
     img_size=224,
     patch_size=14,
     in_chans=13,  #
