@@ -1,21 +1,20 @@
-import sys
+import csv
+import os
 import random
-import pandas as pd
+import sys
+from datetime import datetime
+
 import numpy as np
+import pandas as pd
+import pytorch_lightning as L
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, random_split
-from torchvision import transforms
-from sklearn.metrics import average_precision_score
-
 from configilm import util
 from configilm.extra.DataSets import BENv2_DataSet
+from sklearn.metrics import average_precision_score
+from torch.utils.data import DataLoader, random_split
+from torchvision import transforms
 from tqdm import tqdm
-
-import os
-from datetime import datetime
-import csv
-import pytorch_lightning as L
 
 # Set random seeds for reproducibility
 seed = 42
@@ -124,8 +123,6 @@ def load_model(r=4):
     model_state = model_vitb14.state_dict()
     model_vitb14.load_state_dict(model_state)
 
-    print(model_vitb14)
-
     # Wrap with LoRA
     sys.path.append("/home/arne/LoRA-ViT")
     from lora import LoRA_ViT_timm
@@ -136,6 +133,8 @@ def load_model(r=4):
     num_classes = 19
     classifier = nn.Linear(model_vitb14.embed_dim, num_classes)
     lora_with_head = nn.Sequential(lora_model, classifier)
+
+    print(lora_with_head)
 
     # Ensure classification head is trainable
     for param in classifier.parameters():
@@ -163,17 +162,21 @@ class SoftConLightningModule(L.LightningModule):
 
     def forward(self, x):
         features = self.feature_extractor(x)  # Extract features
-        return self.classifier(features)  # Pass features through the classification head
+        return self.classifier(
+            features
+        )  # Pass features through the classification head
 
     def training_step(self, batch, batch_idx):
         imgs, labels = batch
         outputs = self(imgs)
         loss = self.criterion(outputs, labels.float())
-        
+
         # Compute probabilities and micro AP
         probs = torch.sigmoid(outputs)
-        micro_ap = average_precision_score(labels.cpu().numpy(), probs.detach().cpu().numpy(), average="micro")
-        
+        micro_ap = average_precision_score(
+            labels.cpu().numpy(), probs.detach().cpu().numpy(), average="micro"
+        )
+
         # Log loss and micro AP
         self.log("train_loss", loss, prog_bar=True)
         self.log("train_micro_ap", micro_ap, prog_bar=True)
@@ -183,30 +186,54 @@ class SoftConLightningModule(L.LightningModule):
         imgs, labels = batch
         outputs = self(imgs)
         loss = self.criterion(outputs, labels.float())
-        
+
         # Compute probabilities and micro AP
         probs = torch.sigmoid(outputs)
-        micro_ap = average_precision_score(labels.cpu().numpy(), probs.detach().cpu().numpy(), average="micro")
-        
+        micro_ap = average_precision_score(
+            labels.cpu().numpy(), probs.detach().cpu().numpy(), average="micro"
+        )
+
         # Log loss and micro AP
         self.log("val_loss", loss, prog_bar=True)
         self.log("val_micro_ap", micro_ap, prog_bar=True)
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.lr)
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode="min",  # Minimize the validation loss
+            factor=0.1,  # Reduce LR by a factor of 10
+            patience=2,  # Wait for epochs without improvement
+            threshold = 0.01,
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "monitor": "val_loss",  # Metric to monitor
+            },
+        }
 
 
-# --- Wrap train_model_replay with Lightning ---
-def train_model_replay(lora_with_head, train_loader, val_loader, trainer, lr=1e-4):
+# --- Wrap train_model with Lightning ---
+def train_model(lora_with_head, train_loader, val_loader, trainer, lr=1e-4):
     """
-    Train the SOFTCON model using PyTorch Lightning.
+    Train the model using PyTorch Lightning.
     """
-    # Extract the LoRA model (feature extractor) from the Sequential object
-    lora_model = lora_with_head[0]  # First part of the Sequential object
+    # Handle both Sequential and SoftConLightningModule inputs
+    if isinstance(lora_with_head, SoftConLightningModule):
+        # If already a LightningModule, reuse it
+        pl_model = lora_with_head
+    else:
+        # Extract the LoRA model (feature extractor) from the Sequential object
+        lora_model = lora_with_head[0]  # First part of the Sequential object
 
-    # Wrap the model in a LightningModule
-    embed_dim = model_vitb14.embed_dim
-    pl_model = SoftConLightningModule(lora_model, embed_dim=embed_dim, num_classes=19, lr=lr)
+        # Wrap the model in a LightningModule
+        embed_dim = 768 
+        pl_model = SoftConLightningModule(lora_model, embed_dim=embed_dim, num_classes=19, lr=lr)
+
+    # Ensure the model is in training mode
+    pl_model.train()
 
     # Train the model using the provided trainer
     trainer.fit(pl_model, train_loader, val_loader)
@@ -217,11 +244,6 @@ def train_model_replay(lora_with_head, train_loader, val_loader, trainer, lr=1e-
     print(f"Model saved to {save_path}")
 
     return pl_model
-
-
-def train_model_no_replay():
-    """Placeholder for no-replay training (similar to SpectralGPT.py)"""
-    pass  # TODO: implement this
 
 
 def eval_model(lora_model, test_loader):

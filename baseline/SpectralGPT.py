@@ -120,7 +120,7 @@ def load_model(r=4):
 
     return lora_model
 
-# --- Lightning Module ---
+# --- Lightning Module --- # TODO
 class SpectralGPTLightningModule(L.LightningModule):
     def __init__(self, model, num_classes, lr=1e-4):
         super().__init__()
@@ -156,7 +156,7 @@ class SpectralGPTLightningModule(L.LightningModule):
 
 
 # --- Wrap train_model_replay with Lightning ---
-def train_model_replay(lora_model, train_loader, val_loader, epochs=25, lr=1e-4):
+def train_model(lora_model, train_loader, val_loader, epochs=25, lr=1e-4):
     """
     Train the SpectralGPT model using PyTorch Lightning.
     """
@@ -181,10 +181,6 @@ def train_model_replay(lora_model, train_loader, val_loader, epochs=25, lr=1e-4)
     print(f"Model saved to {save_path}")
 
     return pl_model
-
-
-def train_model_no_replay():
-    pass  # NOTE we can use the replay none
 
 
 def eval_model(lora_model, test_loader):

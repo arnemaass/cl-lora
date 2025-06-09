@@ -6,24 +6,23 @@ import random
 import time
 from collections import defaultdict
 from typing import Any, Dict, List, Tuple
+import torch
 
 import joblib
 import pandas as pd
 import pytorch_lightning as L
 import yaml
-from sklearn.metrics import average_precision_score
-from torch.utils.data import ConcatDataset, DataLoader
-
-# from SpectralGPT import *
-# from SoftCon import *
-
-
-# os.environ["XFORMERS_DISABLED"] = "1"  # for CPU testing
-
 
 # --- DataSet factory based on configilm / BENv2 ---
 from configilm import util
 from configilm.extra.DataSets.BENv2_DataSet import BENv2DataSet
+from pytorch_lightning.callbacks import (
+    EarlyStopping,
+    LearningRateMonitor,
+    ModelCheckpoint,
+)
+from sklearn.metrics import average_precision_score
+from torch.utils.data import ConcatDataset, DataLoader
 
 # Pfade zu den Daten
 datapath = {
@@ -33,37 +32,65 @@ datapath = {
 }
 util.MESSAGE_LEVEL = util.MessageLevel.INFO
 
+# Disable xFormers for debuggin on CPU
+if not torch.cuda.is_available():
+    os.environ["XFORMERS_DISABLED"] = "1"
 
+
+# -- Trainer Parameters ---
 def create_trainer(params: Dict[str, Any]) -> L.Trainer:
     """
-    Create and configure a central PyTorch Lightning Trainer.
+    Create and configure a central PyTorch Lightning Trainer with early stopping,
+    checkpointing, and learning rate scheduling.
     """
-    use_deepspeed = torch.cuda.is_available() and params.get("use_deepspeed", False)
 
+    # Early stopping callback
+    early_stopping = EarlyStopping(
+        monitor="val_loss",  # Metric to monitor
+        patience=params.get(
+            "early_stopping_patience", 5
+        ),  # Stop after 5 epochs without improvement
+        mode="min",  # Minimize the validation loss
+        verbose=True,
+    )
+
+    # Model checkpoint callback
+    checkpoint_callback = ModelCheckpoint(
+        monitor="val_loss",  # Metric to monitor
+        # TODO specify right save directory
+        # dirpath=params.get("save_dir", "./saved_models"),  # Directory to save checkpoints
+        # filename="{country}",  # Placeholder for dynamic naming        save_top_k=1,  # Save only the best model
+        mode="min",  # Minimize the validation loss
+        verbose=True,
+    )
+
+    # Learning rate monitor callback
+    lr_monitor = LearningRateMonitor(logging_interval="epoch")
+
+    # Define the trainer
     trainer = L.Trainer(
         max_epochs=params.get("epoch", 15),
         accelerator="auto",  # Automatically use GPU if available
-        log_every_n_steps=5,
-        # TODO Consider installing `litmodels` package to enable `LitModelCheckpoint` for automatic
-        # # upload to the Lightning model registry.
-        strategy="deepspeed" if use_deepspeed else "auto",  # Use DeepSpeed if enabled
+        log_every_n_steps=10,
+        strategy= L.strategies.DDPStrategy(find_unused_parameters=True),  # Allow unused parameters
         default_root_dir=params.get(
             "save_dir", "./saved_models"
         ),  # Directory for logs and checkpoints
+        callbacks=[early_stopping, checkpoint_callback, lr_monitor],  # Add callbacks
     )
     return trainer
 
 
+# --- Data Loading ---
 def load_country_train_val(
     country: str,
     n_samples: int,
     seed: int = None,
-    img_size=(14, 120, 120),
     include_snowy=False,
     include_cloudy=False,
     split="train",
     frac=0.8,
-    model_module=None,  # Added argument to specify the model module
+    model_module=None,  # Specify the model module
 ):
     """
     Load country-specific train/val datasets. Dynamically adjusts transformations and img_size
@@ -119,14 +146,17 @@ def get_datasets(
     countries: List[str],
     permutation: List[int],
     split: str = "train",
-    img_size: tuple = (12, 128, 128),
     include_snowy: bool = False,
     include_cloudy: bool = False,
     samples_per_country: int = None,
     seed: int = 0,
     frac=0.8,
-    model_module=None,  # Added argument to specify the model module
+    model_module=None,  # Specify the model module
 ) -> Tuple[List[BENv2DataSet], List[BENv2DataSet]]:
+    """
+    Dynamically load datasets for the specified countries and permutation.
+    Adjusts img_size based on the model_module.
+    """
     train_datasets: List[BENv2DataSet] = []
     val_datasets: List[BENv2DataSet] = []
 
@@ -136,7 +166,6 @@ def get_datasets(
             country,
             samples_per_country,
             seed,
-            img_size=img_size,
             include_snowy=include_snowy,
             include_cloudy=include_cloudy,
             split=split,
@@ -156,10 +185,11 @@ def default_metrics(y_true: List[Any], y_pred: List[Any]) -> Dict[str, float]:
     return {"micro_AP": average_precision_score(y_true, y_pred, average="micro")}
 
 
-def test_continual_learning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
+# --- Experiments ---
+def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
     """
-    Continual Learning mit vollständigem Replay über permutierte Länder.
-    Daten werden über DataLoader verarbeitet.
+    Continual Learning with full replay over permuted countries.
+    Always starts training from the base model weights at each step.
     """
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger(__name__)
@@ -173,41 +203,31 @@ def test_continual_learning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
     num_workers = params.get("num_workers", 4)
     epoch = params.get("epoch", 15)
     lr = float(params.get("lr", 1e-4))
+    model_module = params.get("model_module")  # Extract model_module from params
 
+    # Load datasets
     train_sets, val_sets = get_datasets(
         countries,
         permutation,
         split="train",
-        img_size=params.get("img_size", (12, 128, 128)),
         include_snowy=params.get("include_snowy", False),
         include_cloudy=params.get("include_cloudy", False),
         samples_per_country=train_samples,
         seed=seed,
         frac=0.9,
+        model_module=model_module,  # Pass model_module explicitly
     )
     test_sets, _ = get_datasets(
         countries,
         permutation,
         split="test",
-        img_size=params.get("img_size", (12, 128, 128)),
         include_snowy=params.get("include_snowy", False),
         include_cloudy=params.get("include_cloudy", False),
         samples_per_country=test_samples,
         seed=seed,
         frac=1,
+        model_module=model_module,  # Pass model_module explicitly
     )
-
-    print(len(test_sets[0]))  # now only patches from Austria
-    print(len(val_sets[0]))  # now only patches from Austria
-    print(len(train_sets[0]))  # now only patches from Austria
-    # img, lbl = train_sets[0][0]
-    # print("test")
-    # print(img.shape)
-
-    # save unchanged lora_weights once
-    path = "/saved_models/lora_weights_baseline.safetensors"
-    # model.save_fc_parameters(path)
-    # model.save_lora_parameters(path)
 
     metrics_fn = params.get("metrics_fn", default_metrics)
     save_dir = params.get("save_dir")
@@ -230,16 +250,28 @@ def test_continual_learning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
             concat_val, batch_size=batch_size, shuffle=False, num_workers=num_workers
         )
 
+        # Reinitialize the trainer for each step
+        trainer = create_trainer(params)
+
+        # Reload the base model weights
+        base_model = load_model(4)  # Dynamically call load_model to get base weights
+        lora_model = base_model[0]  # Extract the LoRA model (feature extractor)
+
+        # Reinitialize the LightningModule for each step
+        pl_model = SoftConLightningModule(
+            lora_model, embed_dim=768, num_classes=19, lr=lr
+        )
+
         # Train
         start_train = time.time()
-        model = train_model_replay(model, train_loader, val_loader, lr=lr)
+        trainer.fit(pl_model, train_loader, val_loader)
         train_time = time.time() - start_train
         log.info(f"Training time: {train_time:.2f}s")
 
         # Save model
         if save_dir:
             path = os.path.join(save_dir, f"step{step}-{'-'.join(seen_countries)}.pkl")
-            joblib.dump(model, path)
+            joblib.dump(pl_model, path)
             log.info(f"Model saved: {path}")
 
         # Eval on all seen
@@ -253,7 +285,7 @@ def test_continual_learning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
                 shuffle=False,
                 num_workers=num_workers,
             )
-            m = eval_model(model, test_loader)
+            m = eval_model(pl_model, test_loader)
 
             for name, val in m.items():
                 eval_metrics[f"{country}_{name}"] = val
@@ -282,9 +314,7 @@ def test_continual_learning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
     return pd.DataFrame(results)
 
 
-def test_continual_learning_no_replay(
-    model: Any, params: Dict[str, Any]
-) -> pd.DataFrame:
+def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
     """
     Continual Learning without Replay: Train on new country, evaluate on all seen countries.
     """
@@ -302,14 +332,17 @@ def test_continual_learning_no_replay(
     lr = float(params.get("lr", 1e-4))
     model_module = params.get("model_module")  # Extract model_module from params
 
-    # Create the trainer
-    trainer = create_trainer(params)
+    save_dir = params.get("save_dir")
+    metrics_fn = params.get("metrics_fn", default_metrics)
 
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+
+    # Load datasets
     train_sets, val_sets = get_datasets(
         countries,
         permutation,
         split="train",
-        img_size=params.get("img_size", (12, 128, 128)),
         include_snowy=params.get("include_snowy", False),
         include_cloudy=params.get("include_cloudy", False),
         samples_per_country=train_samples,
@@ -320,7 +353,6 @@ def test_continual_learning_no_replay(
         countries,
         permutation,
         split="test",
-        img_size=params.get("img_size", (12, 128, 128)),
         include_snowy=params.get("include_snowy", False),
         include_cloudy=params.get("include_cloudy", False),
         samples_per_country=test_samples,
@@ -328,12 +360,6 @@ def test_continual_learning_no_replay(
         frac=1,
         model_module=model_module,  # Pass model_module explicitly
     )
-
-    save_dir = params.get("save_dir")
-    metrics_fn = params.get("metrics_fn", default_metrics)
-
-    if save_dir:
-        os.makedirs(save_dir, exist_ok=True)
 
     results = []
     prev_model_path = None
@@ -352,15 +378,26 @@ def test_continual_learning_no_replay(
             ds_new_val, batch_size=batch_size, shuffle=False, num_workers=num_workers
         )
 
+        # Reinitialize the trainer for each step
+        trainer = create_trainer(params)
+
+        # Extract the LoRA model (feature extractor) from the Sequential object
+        lora_model = model[0]  # First part of the Sequential object
+
+        # Reinitialize the LightningModule for each step
+        pl_model = SoftConLightningModule(
+            lora_model, embed_dim=768, num_classes=19, lr=lr
+        )
+
         # Train
         start_train = time.time()
-        model = train_model_replay(model, train_loader, val_loader, trainer, lr=lr)
+        trainer.fit(pl_model, train_loader, val_loader)
         train_time = time.time() - start_train
         log.info(f"Training time: {train_time:.2f}s")
 
         if save_dir:
             path = os.path.join(save_dir, f"step{step}-{seen_countries[-1]}.pkl")
-            joblib.dump(model, path)
+            joblib.dump(pl_model, path)
             prev_model_path = path
             log.info(f"Saved: {path}")
 
@@ -375,12 +412,13 @@ def test_continual_learning_no_replay(
                 shuffle=False,
                 num_workers=num_workers,
             )
-            m = eval_model(model, test_loader)
+            m = eval_model(pl_model, test_loader)
             for name, val in m.items():
                 eval_metrics[f"{country}_{name}"] = val
         eval_time = time.time() - start_eval
         log.info(f"Eval time: {eval_time:.2f}s")
 
+        # Calculate mean metrics
         sums, counts = defaultdict(float), defaultdict(int)
         for k, v in eval_metrics.items():
             _, met = k.split("_", 1)
@@ -440,10 +478,10 @@ def main_from_config(config_path: str) -> pd.DataFrame:
     test_type = cfg["test_type"]
     if test_type == "replay":
         model = load_model(4)  # Dynamically call load_model from the imported module
-        return test_continual_learning(model, params)
+        return test_finetuning_from_scratch(model, params)
     elif test_type == "no_replay":
         model = load_model(4)  # Dynamically call load_model from the imported module
-        return test_continual_learning_no_replay(model, params)
+        return test_continual_finetuning(model, params)
     else:
         raise ValueError(f"Unknown test_type: {test_type}")
 
