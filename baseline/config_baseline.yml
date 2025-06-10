@@ -1,7 +1,7 @@
 # Aktualisierte Konfigurationsdatei für Continual-Learning-Benchmark
 
 # Test-Typ: 'replay' oder 'no_replay'
-test_type: no_replay
+test_type: replay
 
 # Modell-Definition , NOT USED
 model_module: my_models                   # Python-Modul mit Modell-Factory
@@ -19,8 +19,8 @@ params:
   permutation: [0, 1, 2, 3, 4]                # Reihenfolge der Länder-Indices
 
   # Anzahl der zufällig gezogenen Samples pro Land
-  train_samples: 5000 #22482
-  test_samples: 500 #8176
+  train_samples: 2200 #22482
+  test_samples: 200 #8176
   seed: 42                              # Seed für Reproduzierbarkeit
 
   # DataLoader-Parameter

@@ -158,10 +158,19 @@ def test_continual_learning(
     #print(img.shape)
 
     #save unchanged lora_weights once
-    path="/saved_models/lora_weights_baseline.safetensors"
-    #model.save_fc_parameters(path)
-    #model.save_lora_parameters(path)
 
+    # (1) Compute an absolute directory under your home or your repo
+    repo_dir = os.path.dirname(os.path.abspath(__file__))  # e.g. .../anton/src/cl-lora/baseline
+    save_dir = os.path.join(repo_dir, "saved_models")  # e.g. .../anton/src/cl-lora/baseline/saved_models
+    os.makedirs(save_dir, exist_ok=True)  # create it if needed
+
+    # (2) Build a fully‐qualified filename
+    out_file = os.path.join(save_dir, "lora_weights_baseline.safetensors")
+
+    # (3) Pass that to save_fc_parameters and save_lora_parameters
+    model.save_fc_parameters(out_file)
+    model.save_lora_parameters(out_file)
+    path_to_file = "/home/anton/src/cl-lora/baseline/saved_models/lora_weights_baseline.safetensors"
 
     metrics_fn = params.get('metrics_fn', default_metrics)
     save_dir = params.get('save_dir')
@@ -182,8 +191,8 @@ def test_continual_learning(
                                  shuffle=False, num_workers=num_workers)
 
         # TODO always reload pretrain weights
-        #model.load_fc_parameters(path)
-        #model.save_lora_parameters(path)
+        model.load_fc_parameters(path_to_file)
+        model.load_lora_parameters(path_to_file)
         #model = load_model(r=4)
         # Train
         start_train = time.time()
