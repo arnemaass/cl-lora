@@ -24,8 +24,6 @@ from pytorch_lightning.callbacks import (
 from sklearn.metrics import average_precision_score
 from torch.utils.data import ConcatDataset, DataLoader
 
-from finetune import lora_model
-
 # Pfade zu den Daten
 datapath = {
     "images_lmdb": "/faststorage/BigEarthNet-V2/BigEarthNet-V2-LMDB",
