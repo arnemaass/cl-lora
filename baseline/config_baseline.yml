@@ -1,12 +1,10 @@
 # Aktualisierte Konfigurationsdatei für Continual-Learning-Benchmark
 
 # Test-Typ: 'replay' oder 'no_replay'
-test_type: replay
+test_type: no_replay
 
-# Modell-Definition , NOT USED
-model_module: my_models                   # Python-Modul mit Modell-Factory
-model_factory: get_model                  # Factory-Funktion
-
+# Modell-Definition
+model_module: SoftCon  # Options: 'SpectralGPT' or 'SoftCon'
 
 # Parameter für die Tests
 params:
@@ -19,19 +17,18 @@ params:
   permutation: [0, 1, 2, 3, 4]                # Reihenfolge der Länder-Indices
 
   # Anzahl der zufällig gezogenen Samples pro Land
-  train_samples: 2200 #22482
-  test_samples: 200 #8176
+  train_samples: 5000 # 5000 #22482
+  test_samples: 500 # 500 #8176
   seed: 42                              # Seed für Reproduzierbarkeit
 
   # DataLoader-Parameter
-  batch_size: 16
+  batch_size: 256
   num_workers: 4
   epoch: 15
   lr: 1e-4
 
 
   # Bildgröße und Filteroptionen
-  img_size: [12, 128, 128]
   include_snowy: false
   include_cloudy: false
 
