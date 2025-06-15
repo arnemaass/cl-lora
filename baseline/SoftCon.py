@@ -120,8 +120,7 @@ def load_model(r=4):
         map_location="cpu",
         weights_only=True,
     )
-    model_state = model_vitb14.state_dict()
-    model_vitb14.load_state_dict(model_state)
+    model_vitb14.load_state_dict(ckpt_vitb14)
 
     # Wrap with LoRA
     sys.path.append("/home/arne/LoRA-ViT")

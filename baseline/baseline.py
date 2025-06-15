@@ -51,6 +51,7 @@ def create_trainer(params: Dict[str, Any]) -> L.Trainer:
             "early_stopping_patience", 5
         ),  # Stop after 5 epochs without improvement
         mode="min",  # Minimize the validation loss
+        min_delta= 0.01,
         verbose=True,
     )
 
@@ -71,7 +72,7 @@ def create_trainer(params: Dict[str, Any]) -> L.Trainer:
     trainer = L.Trainer(
         max_epochs=params.get("epoch", 15),
         accelerator="auto",  # Automatically use GPU if available
-        log_every_n_steps=10,
+        log_every_n_steps=50,
         strategy= L.strategies.DDPStrategy(find_unused_parameters=True),  # Allow unused parameters
         default_root_dir=params.get(
             "save_dir", "./saved_models"
