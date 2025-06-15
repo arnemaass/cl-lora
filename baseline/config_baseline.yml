@@ -24,8 +24,8 @@ params:
   # DataLoader-Parameter
   batch_size: 256
   num_workers: 4
-  epoch: 15
-  lr: 1e-4
+  epoch: 30
+  lr: 1e-3
 
 
   # Bildgröße und Filteroptionen
