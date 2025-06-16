@@ -116,7 +116,7 @@ def load_model(r=4):
 
     # Load pretrained weights
     ckpt_vitb14 = torch.load(
-        "/faststorage/softcon/pretrained/B13_vitb14_softcon_enc.pth",
+        "/faststorage/softcon/pretrained/B13_vitb14_softcon.pth",
         map_location="cpu",
         weights_only=True,
     )

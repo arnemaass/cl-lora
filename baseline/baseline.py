@@ -47,11 +47,10 @@ def create_trainer(params: Dict[str, Any]) -> L.Trainer:
     # Early stopping callback
     early_stopping = EarlyStopping(
         monitor="val_loss",  # Metric to monitor
-        patience=params.get(
-            "early_stopping_patience", 5
-        ),  # Stop after 5 epochs without improvement
+        patience= 5, # Stop after 5 epochs without improvement
         mode="min",  # Minimize the validation loss
-        min_delta= 0.01,
+        min_delta=0.01,  # Minimum change to qualify as an improvement
+        check_on_train_epoch_end=True,  # Check after each training epoch
         verbose=True,
     )
 
@@ -237,13 +236,23 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
     save_dir = os.path.join(repo_dir, "saved_models")  # e.g. .../anton/src/cl-lora/baseline/saved_models
     os.makedirs(save_dir, exist_ok=True)  # create it if needed
 
-    # (2) Build a fully‐qualified filename
-    out_file = os.path.join(save_dir, "lora_weights_baseline.safetensors")
+    # # (2) Build a fully‐qualified filename
+    # out_file = os.path.join(save_dir, "lora_weights_baseline.safetensors")
 
-    # (3) Pass that to save_fc_parameters and save_lora_parameters
-    model.save_fc_parameters(out_file)
-    model.save_lora_parameters(out_file)
-    path_to_file = "/home/anton/src/cl-lora/baseline/saved_models/lora_weights_baseline.safetensors"
+    # # (3) Pass that to save_fc_parameters and save_lora_parameters
+    # model.save_fc_parameters(out_file)
+    # model.save_lora_parameters(out_file)
+    # path_to_file = "/home/anton/src/cl-lora/baseline/saved_models/lora_weights_baseline.safetensors"
+
+    # Build fully-qualified filenames
+    out_file = os.path.join(save_dir, "lora_weights_baseline.safetensors")  # LoRA weights file
+    path_to_classifier_file = os.path.join(save_dir, "classifier_weights_baseline.pth")  # Classifier weights file
+
+    # Save LoRA parameters
+    model[0].save_lora_parameters(out_file)
+
+    # Save classifier head parameters
+    torch.save(model[1].state_dict(), path_to_classifier_file)
 
     metrics_fn = params.get('metrics_fn', default_metrics)
     save_dir = params.get('save_dir')
