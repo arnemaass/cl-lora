@@ -244,15 +244,9 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
     # model.save_lora_parameters(out_file)
     # path_to_file = "/home/anton/src/cl-lora/baseline/saved_models/lora_weights_baseline.safetensors"
 
-    # Build fully-qualified filenames
-    out_file = os.path.join(save_dir, "lora_weights_baseline.safetensors")  # LoRA weights file
-    path_to_classifier_file = os.path.join(save_dir, "classifier_weights_baseline.pth")  # Classifier weights file
-
-    # Save LoRA parameters
-    model[0].save_lora_parameters(out_file)
-
-    # Save classifier head parameters
-    torch.save(model[1].state_dict(), path_to_classifier_file)
+    # # Build fully-qualified filenames
+    # out_file = os.path.join(save_dir, "lora_weights_baseline.safetensors")  # LoRA weights file
+    # path_to_classifier_file = os.path.join(save_dir, "classifier_weights_baseline.pth")  # Classifier weights file
 
     metrics_fn = params.get('metrics_fn', default_metrics)
     save_dir = params.get('save_dir')
@@ -278,12 +272,11 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
         trainer = create_trainer(params)
         if model =="SoftCon":
             # Reload the base model weights
-            base_model = load_model(4)  # Dynamically call load_model to get base weights
-            lora_model = base_model[0]  # Extract the LoRA model (feature extractor)
+            base_model = load_model(r=4)  # Load base model with pretrained weights
 
             # Reinitialize the LightningModule for each step
             pl_model = SoftConLightningModule(
-                lora_model, embed_dim=768, num_classes=19, lr=lr
+                base_model, embed_dim=768, num_classes=19, lr=lr
             )
             model = pl_model
         else:
