@@ -4,7 +4,7 @@
 test_type: replay
 
 # Modell-Definition
-model_module: SoftCon  # Options: 'SpectralGPT' or 'SoftCon'
+model_module: SpectralGPT  # Options: 'SpectralGPT' or 'SoftCon'
 
 # Parameter für die Tests
 params:

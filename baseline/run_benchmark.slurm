@@ -10,7 +10,6 @@
 
 # 1) Arbeitsverzeichnis wechseln
 # cd /home/anton/src/cl-lora/baseline
-cd /home/arne/src/baseline
 
 # 2) Logs-Ordner anlegen
 mkdir -p log

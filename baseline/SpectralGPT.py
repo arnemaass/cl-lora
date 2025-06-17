@@ -48,17 +48,14 @@ generator = torch.Generator().manual_seed(seed)
 
 import importlib.util
 from pathlib import Path
-
-
-sys.path.append("/faststorage/shuocheng/LoRA_SpectralGPT")
-from pos_embed import interpolate_pos_embed
-from LoRA_ViT.video_vit import vit_base_patch8_128
+from utils.pos_embed import interpolate_pos_embed
+from model.video_vit import vit_base_patch8_128
 # Use environment variable or relative path
 
 
 def load_mae_encoder(model, ckpt_path):
     state_dict = model.state_dict()
-    ckpt = torch.load(ckpt_path, map_location="cpu")
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     ckpt_model = ckpt.get("model", ckpt)
     # remove decoder & mask
     ckpt_model = {
@@ -105,10 +102,9 @@ def load_model(r=4):
     )  # trainable parameters: 86859496
 
     # Wrap with LoRA
-    sys.path.append("/home/arne/LoRA-ViT")
-    from LoRA_ViT.lora import LoRA_SViT
+    from model.lora_vit import LoRA_SViT
 
-    lora_model = LoRA_SViT(model, r=r, alpha=16)
+    lora_model = LoRA_SViT(model, r=r, alpha=16, num_classes=19)
 
     print(lora_model)
     print(
@@ -278,6 +274,7 @@ train_std = [
 
 train_transform = transforms.Compose(
     [
+        transforms.ToTensor(),
         transforms.Resize((128, 128)),
         SelectChannels(),
         transforms.RandomHorizontalFlip(),  # Random horizontal flip
@@ -291,7 +288,7 @@ train_transform = transforms.Compose(
             ]
         ),
         transforms.RandomResizedCrop(
-            size=(128, 128), scale=(0.8, 1.0)
+            size=(128, 128), scale=(0.8, 1.0), interpolation=transforms.InterpolationMode.BICUBIC
         ),  # Random resized crop
         NormalizeWithStats(
             train_mean, train_std

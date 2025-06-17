@@ -5,7 +5,7 @@ set -euo pipefail
 # if not, activate it however you normally would
 
 # 1) cd into your repo
-cd /home/anton/src/cl-lora/baseline
+# cd /home/anton/src/cl-lora/baseline
 
 # 2) make sure the log folder exists
 mkdir -p log
