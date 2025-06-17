@@ -117,7 +117,6 @@ def load_model(r=4):
     ckpt_vitb14 = torch.load(
         "/faststorage/softcon/pretrained/B13_vitb14_softcon.pth",
         map_location="cpu",
-        weights_only=True,
     )
     model_vitb14.load_state_dict(ckpt_vitb14)
 
@@ -127,26 +126,25 @@ def load_model(r=4):
 
     lora_model = LoRA_ViT_timm(model_vitb14, num_classes=0, r=r, alpha=16)
 
-    # Add classification head
-    num_classes = 19
-    classifier = nn.Linear(model_vitb14.embed_dim, num_classes)
-    lora_with_head = nn.Sequential(lora_model, classifier)
+    # # Add classification head
+    # num_classes = 19
+    # classifier = nn.Linear(model_vitb14.embed_dim, num_classes)
+    # lora_with_head = nn.Sequential(lora_model, classifier)
 
-    print(lora_with_head)
+    # # Ensure classification head is trainable
+    # for param in classifier.parameters():
+    #     param.requires_grad = True
 
-    # Ensure classification head is trainable
-    for param in classifier.parameters():
-        param.requires_grad = True
-
+    print(lora_model)
     print(
         "Number of trainable parameters (w/ LoRA):",
-        sum(p.numel() for p in lora_with_head.parameters() if p.requires_grad),
+        sum(p.numel() for p in lora_model.parameters() if p.requires_grad),
     )
 
     # Move model to device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    lora_with_head.to(device)
-    return lora_with_head
+    lora_model.to(device)
+    return lora_model
 
 
 # --- Lightning Module ---
