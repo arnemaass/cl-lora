@@ -126,41 +126,43 @@ def load_model(r=4):
 
     lora_model = LoRA_ViT_timm(model_vitb14, num_classes=0, r=r, alpha=16)
 
-    # # Add classification head
-    # num_classes = 19
-    # classifier = nn.Linear(model_vitb14.embed_dim, num_classes)
-    # lora_with_head = nn.Sequential(lora_model, classifier)
+    # Add classification head
+    num_classes = 19
+    classifier = nn.Linear(model_vitb14.embed_dim, num_classes)
+    lora_with_head = nn.Sequential(lora_model, classifier)
 
-    # # Ensure classification head is trainable
-    # for param in classifier.parameters():
-    #     param.requires_grad = True
+    # Ensure classification head is trainable
+    for param in classifier.parameters():
+        param.requires_grad = True
 
-    print(lora_model)
+    print(lora_with_head)
     print(
         "Number of trainable parameters (w/ LoRA):",
-        sum(p.numel() for p in lora_model.parameters() if p.requires_grad),
+        sum(p.numel() for p in lora_with_head.parameters() if p.requires_grad),
     )
 
     # Move model to device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    lora_model.to(device)
-    return lora_model
+    lora_with_head.to(device)
+    return lora_with_head
 
 
 # --- Lightning Module ---
 class SoftConLightningModule(L.LightningModule):
     def __init__(self, model, embed_dim, num_classes, lr=1e-4):
         super().__init__()
-        self.feature_extractor = model  # LoRA model (without classification head)
-        self.classifier = nn.Linear(embed_dim, num_classes)  # Classification head
+        self.model = model
+        # self.feature_extractor = model  # LoRA model (without classification head)
+        # self.classifier = nn.Linear(embed_dim, num_classes)  # Classification head
         self.criterion = nn.BCEWithLogitsLoss()
         self.lr = lr
 
     def forward(self, x):
-        features = self.feature_extractor(x)  # Extract features
-        return self.classifier(
-            features
-        )  # Pass features through the classification head
+        return self.model(x)  
+        # features = self.feature_extractor(x)  # Extract features
+        # return self.classifier(
+        #     features
+        # )  # Pass features through the classification head
 
     def training_step(self, batch, batch_idx):
         imgs, labels = batch
