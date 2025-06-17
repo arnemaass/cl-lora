@@ -270,7 +270,7 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
 
         # Reinitialize the trainer for each step
         trainer = create_trainer(params)
-        if model =="SoftCon":
+        if model_module =="SoftCon":
             # Reload the base model weights
             base_model = load_model(r=4)  # Load base model with pretrained weights
 
@@ -278,10 +278,9 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
             pl_model = SoftConLightningModule(
                 base_model, embed_dim=768, num_classes=19, lr=lr
             )
-            model = pl_model
-        else:
-            model.load_fc_parameters(path_to_file)
-            model.load_lora_parameters(path_to_file)
+        # else:
+        #     model.load_fc_parameters(path_to_file)
+        #     model.load_lora_parameters(path_to_file)
         #model = load_model(r=4)
         # Train
         start_train = time.time()
