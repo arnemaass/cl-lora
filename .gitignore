@@ -4,3 +4,10 @@
 *.pyc
 *.code-workspace
 baseline/saved_models/*
+archive/
+.env
+/demos
+__pycache__/
+log/
+softcon
+saved_models/
