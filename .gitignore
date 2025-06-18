@@ -2,3 +2,5 @@
 *.err
 *.out
 *.pyc
+*.code-workspace
+baseline/saved_models/*

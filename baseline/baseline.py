@@ -97,12 +97,11 @@ def load_country_train_val(
     based on the model_module argument.
     """
     # Dynamically adjust transformations and img_size
+    transform = train_transform if split == "train" else val_transform
     if model_module == "SoftCon":
-        transform = train_transform if split == "train" else val_transform
-        img_size = (14, 224, 224)  # SoftCon-specific img_size
+        img_size_ben = (14, 224, 224)  # SoftCon-specific img_size for BENv2 loader
     elif model_module == "SpectralGPT":
-        transform = train_transform if split == "train" else val_transform
-        img_size = (12, 128, 128)  # SpectralGPT-specific img_size
+        img_size_ben = (14, 128, 128)  # SpectralGPT-specific img_size for BENv2 loader
     else:
         raise ValueError(f"Unknown model_module: {model_module}")
 
@@ -129,7 +128,7 @@ def load_country_train_val(
     def _make_ds(keep_ids):
         return BENv2DataSet(
             data_dirs=datapath,
-            img_size=img_size,
+            img_size=img_size_ben,
             split=split,
             include_snowy=include_snowy,
             include_cloudy=include_cloudy,
@@ -278,6 +277,14 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
             pl_model = SoftConLightningModule(
                 base_model, embed_dim=768, num_classes=19, lr=lr
             )
+        elif model_module == "SpectralGPT":
+            # Reload the base model weights
+            base_model = load_model(r=4)
+            pl_model = SpectralGPTLightningModule(
+                base_model, num_classes=19, lr=lr
+            )
+        else:
+            raise ValueError(f"Unknown model_module: {model_module}")
         # else:
         #     model.load_fc_parameters(path_to_file)
         #     model.load_lora_parameters(path_to_file)

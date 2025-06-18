@@ -274,7 +274,6 @@ train_std = [
 
 train_transform = transforms.Compose(
     [
-        transforms.ToTensor(),
         transforms.Resize((128, 128)),
         SelectChannels(),
         transforms.RandomHorizontalFlip(),  # Random horizontal flip
