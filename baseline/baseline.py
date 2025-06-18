@@ -242,7 +242,7 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
     # # (3) Pass that to save_fc_parameters and save_lora_parameters
     # model.save_fc_parameters(out_file)
     # model.save_lora_parameters(out_file)
-    # path_to_file = "/home/anton/src/cl-lora/baseline/saved_models/lora_weights_baseline.safetensors"
+    path_to_file = "/home/anton/src/cl-lora/baseline/saved_models/lora_weights_baseline.safetensors"
 
     # # Build fully-qualified filenames
     # out_file = os.path.join(save_dir, "lora_weights_baseline.safetensors")  # LoRA weights file
