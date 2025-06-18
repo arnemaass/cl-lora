@@ -25,7 +25,7 @@ params:
   batch_size: 256
   num_workers: 4
   epoch: 30
-  lr: 1e-3
+  lr: 1e-4
 
 
   # Bildgröße und Filteroptionen

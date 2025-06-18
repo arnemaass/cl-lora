@@ -1,0 +1,7 @@
+archive/
+.env
+/demos
+__pycache__/
+log/
+softcon
+saved_models/
