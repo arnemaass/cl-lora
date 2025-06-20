@@ -401,6 +401,7 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
         )
     elif model_module == "SpectralGPT":
         # Reload the base model weights
+        model = load_model(r=4)
         pl_model = SpectralGPTLightningModule(
             model, num_classes=19, lr=lr
         )
