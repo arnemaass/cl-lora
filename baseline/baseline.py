@@ -247,9 +247,16 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
     # out_file = os.path.join(save_dir, "lora_weights_baseline.safetensors")  # LoRA weights file
     # path_to_classifier_file = os.path.join(save_dir, "classifier_weights_baseline.pth")  # Classifier weights file
 
+    # else:
+    #     model.load_fc_parameters(path_to_file)
+    #     model.load_lora_parameters(path_to_file)
+    # model = load_model(r=4)
+
+
     metrics_fn = params.get('metrics_fn', default_metrics)
     save_dir = params.get('save_dir')
     if save_dir: os.makedirs(save_dir, exist_ok=True)
+
 
     results = []
     for step in range(1, len(permutation) + 1):
@@ -269,7 +276,7 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
 
         # Reinitialize the trainer for each step
         trainer = create_trainer(params)
-        if model_module =="SoftCon":
+        if model_module == "SoftCon":
             # Reload the base model weights
             base_model = load_model(r=4)  # Load base model with pretrained weights
 
@@ -285,10 +292,7 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
             )
         else:
             raise ValueError(f"Unknown model_module: {model_module}")
-        # else:
-        #     model.load_fc_parameters(path_to_file)
-        #     model.load_lora_parameters(path_to_file)
-        #model = load_model(r=4)
+
         # Train
         start_train = time.time()
         trainer.fit(pl_model, train_loader, val_loader)
@@ -387,6 +391,21 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
         frac=1,
         model_module=model_module,  # Pass model_module explicitly
     )
+    if model_module == "SoftCon":
+        # Reload the base model weights
+        base_model = load_model(r=4)  # Load base model with pretrained weights
+
+        # Reinitialize the LightningModule for each step
+        pl_model = SoftConLightningModule(
+            model, embed_dim=768, num_classes=19, lr=lr
+        )
+    elif model_module == "SpectralGPT":
+        # Reload the base model weights
+        pl_model = SpectralGPTLightningModule(
+            model, num_classes=19, lr=lr
+        )
+    else:
+        raise ValueError(f"Unknown model_module: {model_module}")
 
     results = []
     prev_model_path = None
@@ -409,12 +428,11 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
         trainer = create_trainer(params)
 
         # Extract the LoRA model (feature extractor) from the Sequential object
-        lora_model = model[0]  # First part of the Sequential object
-
+        #lora_model = model#[0]  # First part of the Sequential object
         # Reinitialize the LightningModule for each step
-        pl_model = SoftConLightningModule(
-            lora_model, embed_dim=768, num_classes=19, lr=lr
-        )
+        #pl_model = SoftConLightningModule(
+        #    lora_model, embed_dim=768, num_classes=19, lr=lr
+        #)
 
         # Train
         start_train = time.time()
