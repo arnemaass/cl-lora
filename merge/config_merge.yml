@@ -1,0 +1,39 @@
+# Konfigurationsdatei für Continual-Learning-Merging
+
+# Test-Typ: ZipLoRA , LoRASoups or LoRAHub
+test_type: ZipLoRA
+
+# Modell-Definition
+model_module: SpectralGPT  # Options: 'SpectralGPT' or 'SoftCon'
+
+# Parameter für die Tests
+params:
+  countries:
+    - Finland
+    - Ireland
+    - Serbia
+    - Austria
+    - Portugal
+  permutation: [0, 1, 2, 3, 4]                # Reihenfolge der Länder-Indices
+
+  # Anzahl der zufällig gezogenen Samples pro Land
+  train_samples: 5 #22482
+  test_samples: 1 #8176
+  memory_size: 5 # something between 100 and 500
+  seed: 42                              # Seed für Reproduzierbarkeit
+
+  # DataLoader-Parameter
+  batch_size: 256
+  num_workers: 4
+  epoch: 1
+  lr: 1e-3
+
+
+  # Bildgröße und Filteroptionen
+  include_snowy: false
+  include_cloudy: false
+
+
+  save_dir: ./saved_models                # Verzeichnis zum Speichern der Modelle
+  log_every_step: true
+

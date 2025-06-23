@@ -22,7 +22,8 @@ from pytorch_lightning.callbacks import (
     ModelCheckpoint,
 )
 from sklearn.metrics import average_precision_score
-from torch.utils.data import ConcatDataset, DataLoader
+from torch.utils.data import ConcatDataset, DataLoader, Subset
+import math
 
 # Pfade zu den Daten
 datapath = {
@@ -183,9 +184,23 @@ def default_metrics(y_true: List[Any], y_pred: List[Any]) -> Dict[str, float]:
     """
     return {"micro_AP": average_precision_score(y_true, y_pred, average="micro")}
 
+    # -------------------------------------------------------------------------
+    #  Helper: randomly pick 'n' indices from a dataset
+    # -------------------------------------------------------------------------
+
+
+def sample_subset(dataset, n, seed):
+    """Return a Subset of size min(n, len(dataset))."""
+    if n >= len(dataset):
+        return dataset  # keep the whole set
+    g = torch.Generator().manual_seed(seed)  # reproducible
+    idx = torch.randperm(len(dataset), generator=g)[: n]
+
+    return Subset(dataset, idx.tolist())
+
 
 # --- Experiments ---
-def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
+def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
     """
     Continual Learning with full replay over permuted countries.
     Always starts training from the base model weights at each step.
@@ -228,76 +243,101 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
         model_module=model_module,  # Pass model_module explicitly
     )
 
-    #save unchanged lora_weights once
-
-    # (1) Compute an absolute directory under your home or your repo
-    repo_dir = os.path.dirname(os.path.abspath(__file__))  # e.g. .../anton/src/cl-lora/baseline
-    save_dir = os.path.join(repo_dir, "saved_models")  # e.g. .../anton/src/cl-lora/baseline/saved_models
-    os.makedirs(save_dir, exist_ok=True)  # create it if needed
-
-    # # (2) Build a fully‐qualified filename
-    # out_file = os.path.join(save_dir, "lora_weights_baseline.safetensors")
-
-    # # (3) Pass that to save_fc_parameters and save_lora_parameters
-    # model.save_fc_parameters(out_file)
-    # model.save_lora_parameters(out_file)
-    path_to_file = "/home/anton/src/cl-lora/baseline/saved_models/lora_weights_baseline.safetensors"
-
-    # # Build fully-qualified filenames
-    # out_file = os.path.join(save_dir, "lora_weights_baseline.safetensors")  # LoRA weights file
-    # path_to_classifier_file = os.path.join(save_dir, "classifier_weights_baseline.pth")  # Classifier weights file
-
-    # else:
-    #     model.load_fc_parameters(path_to_file)
-    #     model.load_lora_parameters(path_to_file)
-    # model = load_model(r=4)
-
-
-    metrics_fn = params.get('metrics_fn', default_metrics)
     save_dir = params.get('save_dir')
     if save_dir: os.makedirs(save_dir, exist_ok=True)
 
-
+    # -------------------------------------------------------------------------
+    #  Continual-learning loop with bounded replay memory
+    # -------------------------------------------------------------------------
     results = []
-    for step in range(1, len(permutation) + 1):
+    memory_size = params.get("memory_size")  # total budget for old data
+    replay_train_sets, replay_val_sets = [], []  # what actually goes into replay
+
+    for step in range(2, len(permutation) + 1):
         seen_idx = permutation[:step]
         seen_countries = [countries[i] for i in seen_idx]
         log.info(f"Step {step}: Countries {seen_countries}")
 
-        # Build training DataLoader
-        concat_train = ConcatDataset(train_sets[:step])
-        concat_val = ConcatDataset(val_sets[:step])
-        train_loader = DataLoader(
-            concat_train, batch_size=batch_size, shuffle=True, num_workers=num_workers
+        # ---------------------------------------------------------------------
+        #  Decide how many samples of *each* old task we may keep
+        # ---------------------------------------------------------------------
+        if step == 2:  # only one old task so far
+            share = memory_size
+        else:
+            share = math.ceil(memory_size / (step - 1))  # equal share per old task
+
+        # Build replay sets for ALL old tasks (step-1 of them)
+        replay_train_sets.clear()
+        replay_val_sets.clear()
+        for t in range(step - 1):
+            replay_train_sets.append(sample_subset(train_sets[t], share, seed))
+            replay_val_sets.append(sample_subset(val_sets[t], share, seed))
+
+        # New (current) task gets *all* its data
+        train_current = train_sets[step - 1]
+        val_current = val_sets[step - 1]
+
+        # ---------------------------------------------------------------------
+        #  Create loaders
+        # ---------------------------------------------------------------------
+        concat_train_old = ConcatDataset(replay_train_sets)
+        concat_val_old = ConcatDataset(replay_val_sets)
+        train_loader_old = DataLoader(
+            concat_train_old, batch_size=batch_size, shuffle=True, num_workers=num_workers
         )
-        val_loader = DataLoader(
-            concat_val, batch_size=batch_size, shuffle=False, num_workers=num_workers
+        val_loader_old = DataLoader(
+            concat_val_old, batch_size=batch_size, shuffle=False, num_workers=num_workers
         )
 
+        train_loader_new = DataLoader(
+            train_current, batch_size=batch_size, shuffle=True, num_workers=num_workers
+        )
+        val_loader_new = DataLoader(
+            val_current, batch_size=batch_size, shuffle=False, num_workers=num_workers
+        )
+
+        # TODO we need to load the 2 models correctly
         # Reinitialize the trainer for each step
         trainer = create_trainer(params)
         if model_module == "SoftCon":
-            # Reload the base model weights
-            base_model = load_model(r=4)  # Load base model with pretrained weights
+            model_old = load_model(r=4)  # load old model
+            model_new = load_model(r=4)  # load new model
 
-            # Reinitialize the LightningModule for each step
-            pl_model = SoftConLightningModule(
+            pl_model_old = SpectralGPTLightningModule(
                 base_model, embed_dim=768, num_classes=19, lr=lr
             )
+            pl_model_new = SpectralGPTLightningModule(
+                base_model, embed_dim=768, num_classes=19, lr=lr
+            )
+
         elif model_module == "SpectralGPT":
-            # Reload the base model weights
-            base_model = load_model(r=4)
-            pl_model = SpectralGPTLightningModule(
-                base_model, num_classes=19, lr=lr
+            model_old= load_model(r=4) #load old model
+            model_new = load_model(r=4) # load new model
+
+            pl_model_old = SpectralGPTLightningModule(
+                model_old, num_classes=19, lr=lr
+            )
+            pl_model_new = SpectralGPTLightningModule(
+                model_new, num_classes=19, lr=lr
             )
         else:
             raise ValueError(f"Unknown model_module: {model_module}")
 
-        # Train
-        start_train = time.time()
-        trainer.fit(pl_model, train_loader, val_loader)
-        train_time = time.time() - start_train
-        log.info(f"Training time: {train_time:.2f}s")
+        # TODO here we call the merging methods
+        # Merge
+        start_merge = time.time()
+        if test_type=="ZipLoRA":
+            from ziplora import ZipLoRaMerge
+            pl_model = ZipLoRaMerge(pl_model_old,pl_model_new,train_loader_old,train_loader_new,val_loader_old,val_loader_new,step,params)
+        if test_type == "LoRASoups":
+            pl_model = LoRASoupsMerge()
+        if test_type == "LoRAHub":
+            pl_model = LoRAHubMerge()
+        else:
+            raise ValueError(f"Unknown test_type: {test_type}")
+
+        merge_time = time.time() - start_merge
+        log.info(f"Merge time: {merge_time:.2f}s")
 
         # Save model
         if save_dir:
@@ -334,145 +374,7 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
         row = {
             "step": step,
             "countries": tuple(seen_countries),
-            "train_time_s": train_time,
-            "eval_time_s": eval_time,
-        }
-        row.update(eval_metrics)
-        row.update(mean_metrics)
-        results.append(row)
-        log.info(f"Result: {row}")
-
-    return pd.DataFrame(results)
-
-
-def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
-    """
-    Continual Learning without Replay: Train on new country, evaluate on all seen countries.
-    """
-    logging.basicConfig(level=logging.INFO)
-    log = logging.getLogger(__name__)
-
-    countries = params["countries"]
-    permutation = params["permutation"]
-    train_samples = params.get("train_samples")
-    test_samples = params.get("test_samples")
-    seed = params.get("seed", 0)
-    batch_size = params.get("batch_size", 16)
-    num_workers = params.get("num_workers", 4)
-    epoch = params.get("epoch", 15)
-    lr = float(params.get("lr", 1e-4))
-    model_module = params.get("model_module")  # Extract model_module from params
-
-    save_dir = params.get("save_dir")
-    metrics_fn = params.get("metrics_fn", default_metrics)
-
-    if save_dir:
-        os.makedirs(save_dir, exist_ok=True)
-
-    # Load datasets
-    train_sets, val_sets = get_datasets(
-        countries,
-        permutation,
-        split="train",
-        include_snowy=params.get("include_snowy", False),
-        include_cloudy=params.get("include_cloudy", False),
-        samples_per_country=train_samples,
-        seed=seed,
-        model_module=model_module,  # Pass model_module explicitly
-    )
-    test_sets, _ = get_datasets(
-        countries,
-        permutation,
-        split="test",
-        include_snowy=params.get("include_snowy", False),
-        include_cloudy=params.get("include_cloudy", False),
-        samples_per_country=test_samples,
-        seed=seed,
-        frac=1,
-        model_module=model_module,  # Pass model_module explicitly
-    )
-    if model_module == "SoftCon":
-        # Reinitialize the LightningModule for each step
-        pl_model = SoftConLightningModule(
-            model, embed_dim=768, num_classes=19, lr=lr
-        )
-    elif model_module == "SpectralGPT":
-        # Reload the base model weights
-        model = load_model(r=4)
-        pl_model = SpectralGPTLightningModule(
-            model, num_classes=19, lr=lr
-        )
-    else:
-        raise ValueError(f"Unknown model_module: {model_module}")
-
-    results = []
-    prev_model_path = None
-    for step in range(1, len(permutation) + 1):
-        seen_idx = permutation[:step]
-        seen_countries = [countries[i] for i in seen_idx]
-        log.info(f"Step {step}: Countries {seen_countries}")
-
-        # Train on new country DataLoader
-        ds_new = train_sets[step - 1]
-        train_loader = DataLoader(
-            ds_new, batch_size=batch_size, shuffle=True, num_workers=num_workers
-        )
-        ds_new_val = val_sets[step - 1]
-        val_loader = DataLoader(
-            ds_new_val, batch_size=batch_size, shuffle=False, num_workers=num_workers
-        )
-
-        # Reinitialize the trainer for each step
-        trainer = create_trainer(params)
-
-        # Extract the LoRA model (feature extractor) from the Sequential object
-        #lora_model = model#[0]  # First part of the Sequential object
-        # Reinitialize the LightningModule for each step
-        #pl_model = SoftConLightningModule(
-        #    lora_model, embed_dim=768, num_classes=19, lr=lr
-        #)
-
-        # Train
-        start_train = time.time()
-        trainer.fit(pl_model, train_loader, val_loader)
-        train_time = time.time() - start_train
-        log.info(f"Training time: {train_time:.2f}s")
-
-        if save_dir:
-            path = os.path.join(save_dir, f"step{step}-{seen_countries[-1]}.pkl")
-            joblib.dump(pl_model, path)
-            prev_model_path = path
-            log.info(f"Saved: {path}")
-
-        # Eval all seen
-        eval_metrics = {}
-        start_eval = time.time()
-        for idx in seen_idx:
-            country = countries[idx]
-            test_loader = DataLoader(
-                test_sets[idx],
-                batch_size=batch_size,
-                shuffle=False,
-                num_workers=num_workers,
-            )
-            m = eval_model(pl_model, test_loader)
-            for name, val in m.items():
-                eval_metrics[f"{country}_{name}"] = val
-        eval_time = time.time() - start_eval
-        log.info(f"Eval time: {eval_time:.2f}s")
-
-        # Calculate mean metrics
-        sums, counts = defaultdict(float), defaultdict(int)
-        for k, v in eval_metrics.items():
-            _, met = k.split("_", 1)
-            sums[met] += v
-            counts[met] += 1
-        mean_metrics = {f"mean_{m}": sums[m] / counts[m] for m in sums}
-
-        row = {
-            "step": step,
-            "countries": tuple(seen_countries),
-            "train_time_s": train_time,
+            "train_time_s": merge_time,
             "eval_time_s": eval_time,
         }
         row.update(eval_metrics)
@@ -519,14 +421,7 @@ def main_from_config(config_path: str) -> pd.DataFrame:
         params["metrics_fn"] = getattr(import_module(mod), fn)
 
     test_type = cfg["test_type"]
-    model = load_model(4)
-    if test_type == "replay":
-        return test_finetuning_from_scratch(model, params)
-    elif test_type == "no_replay":
-        return test_continual_finetuning(model, params)
-    else:
-        raise ValueError(f"Unknown test_type: {test_type}")
-
+    test_merging(test_type, params)
 
 def setup_logging():
     logging.basicConfig(
