@@ -279,10 +279,8 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
         if model_module == "SoftCon":
             # Reload the base model weights
             base_model = load_model(r=4)  # Load base model with pretrained weights
-
-            # Reinitialize the LightningModule for each step
             pl_model = SoftConLightningModule(
-                base_model, embed_dim=768, num_classes=19, lr=lr
+                base_model, num_classes=19, lr=lr
             )
         elif model_module == "SpectralGPT":
             # Reload the base model weights
@@ -397,7 +395,7 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
 
         # Reinitialize the LightningModule for each step
         pl_model = SoftConLightningModule(
-            model, embed_dim=768, num_classes=19, lr=lr
+            model, num_classes=19, lr=lr
         )
     elif model_module == "SpectralGPT":
         # Reload the base model weights
@@ -427,13 +425,6 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
 
         # Reinitialize the trainer for each step
         trainer = create_trainer(params)
-
-        # Extract the LoRA model (feature extractor) from the Sequential object
-        #lora_model = model#[0]  # First part of the Sequential object
-        # Reinitialize the LightningModule for each step
-        #pl_model = SoftConLightningModule(
-        #    lora_model, embed_dim=768, num_classes=19, lr=lr
-        #)
 
         # Train
         start_train = time.time()

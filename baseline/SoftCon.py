@@ -149,20 +149,14 @@ def load_model(r=4):
 
 # --- Lightning Module ---
 class SoftConLightningModule(L.LightningModule):
-    def __init__(self, model, embed_dim, num_classes, lr=1e-4):
+    def __init__(self, model, num_classes, lr=1e-4):
         super().__init__()
         self.model = model
-        # self.feature_extractor = model  # LoRA model (without classification head)
-        # self.classifier = nn.Linear(embed_dim, num_classes)  # Classification head
         self.criterion = nn.BCEWithLogitsLoss()
         self.lr = lr
 
     def forward(self, x):
-        return self.model(x)  
-        # features = self.feature_extractor(x)  # Extract features
-        # return self.classifier(
-        #     features
-        # )  # Pass features through the classification head
+        return self.model(x) 
 
     def training_step(self, batch, batch_idx):
         imgs, labels = batch
@@ -227,8 +221,7 @@ def train_model(lora_with_head, train_loader, val_loader, trainer, lr=1e-4):
         lora_model = lora_with_head[0]  # First part of the Sequential object
 
         # Wrap the model in a LightningModule
-        embed_dim = 768 
-        pl_model = SoftConLightningModule(lora_model, embed_dim=embed_dim, num_classes=19, lr=lr)
+        pl_model = SoftConLightningModule(lora_model, num_classes=19, lr=lr)
 
     # Ensure the model is in training mode
     pl_model.train()
