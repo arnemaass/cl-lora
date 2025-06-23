@@ -390,6 +390,7 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
         model_module=model_module,  # Pass model_module explicitly
     )
     if model_module == "SoftCon":
+        model = load_model(r=4)
         # Reinitialize the LightningModule for each step
         pl_model = SoftConLightningModule(
             model, num_classes=19, lr=lr
