@@ -205,8 +205,9 @@ class VisionTransformer(nn.Module):
         x = self.norm(x)
         # x = self.fc_norm(x)
         x = self.dropout(x)
-        x = self.head(x)
-
+        #x = self.head(x)
+        if hasattr(self, 'fc'):
+            x = self.fc(x)  # b,num_classes
 
         return x
 
