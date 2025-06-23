@@ -18,7 +18,7 @@ mkdir -p log
 #    (das ist das Ergebnis von `which python` in deinem Env)
 PYTHON=/faststorage/arne/mamba/envs/cl_lora_env/bin/python
 
-export PYTHONPATH="/faststorage/shuocheng/LoRA_ViT:/home/arne/LoRA-ViT:${PYTHONPATH:-}"
+# export PYTHONPATH="/faststorage/shuocheng/LoRA_ViT:/home/arne/LoRA-ViT:${PYTHONPATH:-}"
 
 # 5) run baseline.py, teeing logs into a timestamped file
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)

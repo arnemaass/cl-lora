@@ -390,9 +390,6 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
         model_module=model_module,  # Pass model_module explicitly
     )
     if model_module == "SoftCon":
-        # Reload the base model weights
-        model = load_model(r=4)  # Load base model with pretrained weights
-
         # Reinitialize the LightningModule for each step
         pl_model = SoftConLightningModule(
             model, num_classes=19, lr=lr
@@ -513,11 +510,10 @@ def main_from_config(config_path: str) -> pd.DataFrame:
         params["metrics_fn"] = getattr(import_module(mod), fn)
 
     test_type = cfg["test_type"]
+    model = load_model(4)
     if test_type == "replay":
-        model = load_model(4)  # Dynamically call load_model from the imported module
         return test_finetuning_from_scratch(model, params)
     elif test_type == "no_replay":
-        model = load_model(4)  # Dynamically call load_model from the imported module
         return test_continual_finetuning(model, params)
     else:
         raise ValueError(f"Unknown test_type: {test_type}")
