@@ -12,6 +12,7 @@ import joblib
 import pandas as pd
 import pytorch_lightning as L
 import yaml
+import sys
 
 # --- DataSet factory based on configilm / BENv2 ---
 from configilm import util
@@ -25,164 +26,20 @@ from sklearn.metrics import average_precision_score
 from torch.utils.data import ConcatDataset, DataLoader, Subset
 import math
 
-# Pfade zu den Daten
-datapath = {
-    "images_lmdb": "/faststorage/BigEarthNet-V2/BigEarthNet-V2-LMDB",
-    "metadata_parquet": "/faststorage/BigEarthNet-V2/metadata.parquet",
-    "metadata_snow_cloud_parquet": "/faststorage/BigEarthNet-V2/metadata_for_patches_with_snow_cloud_or_shadow.parquet",
-}
-util.MESSAGE_LEVEL = util.MessageLevel.INFO
-
-# Disable xFormers for debuggin on CPU
-if not torch.cuda.is_available():
-    os.environ["XFORMERS_DISABLED"] = "1"
-
-
-# -- Trainer Parameters ---
-def create_trainer(params: Dict[str, Any]) -> L.Trainer:
-    """
-    Create and configure a central PyTorch Lightning Trainer with early stopping,
-    checkpointing, and learning rate scheduling.
-    """
-
-    # Early stopping callback
-    early_stopping = EarlyStopping(
-        monitor="val_loss",  # Metric to monitor
-        patience= 5, # Stop after 5 epochs without improvement
-        mode="min",  # Minimize the validation loss
-        min_delta=0.01,  # Minimum change to qualify as an improvement
-        check_on_train_epoch_end=True,  # Check after each training epoch
-        verbose=True,
-    )
-
-    # Model checkpoint callback
-    checkpoint_callback = ModelCheckpoint(
-        monitor="val_loss",  # Metric to monitor
-        # TODO specify right save directory
-        # dirpath=params.get("save_dir", "./saved_models"),  # Directory to save checkpoints
-        # filename="{country}",  # Placeholder for dynamic naming        save_top_k=1,  # Save only the best model
-        mode="min",  # Minimize the validation loss
-        verbose=True,
-    )
-
-    # Learning rate monitor callback
-    lr_monitor = LearningRateMonitor(logging_interval="epoch")
-
-    # Define the trainer
-    trainer = L.Trainer(
-        max_epochs=params.get("epoch", 15),
-        accelerator="auto",  # Automatically use GPU if available
-        log_every_n_steps=50,
-        strategy= L.strategies.DDPStrategy(find_unused_parameters=True),  # Allow unused parameters
-        default_root_dir=params.get(
-            "save_dir", "./saved_models"
-        ),  # Directory for logs and checkpoints
-        callbacks=[early_stopping, checkpoint_callback, lr_monitor],  # Add callbacks
-    )
-    return trainer
-
-
-# --- Data Loading ---
-def load_country_train_val(
-    country: str,
-    n_samples: int,
-    seed: int = None,
-    include_snowy=False,
-    include_cloudy=False,
-    split="train",
-    frac=0.8,
-    model_module=None,  # Specify the model module
-):
-    """
-    Load country-specific train/val datasets. Dynamically adjusts transformations and img_size
-    based on the model_module argument.
-    """
-    # Dynamically adjust transformations and img_size
-    transform = train_transform if split == "train" else val_transform
-    if model_module == "SoftCon":
-        img_size_ben = (14, 224, 224)  # SoftCon-specific img_size for BENv2 loader
-    elif model_module == "SpectralGPT":
-        img_size_ben = (14, 128, 128)  # SpectralGPT-specific img_size for BENv2 loader
-    else:
-        raise ValueError(f"Unknown model_module: {model_module}")
-
-    meta = pd.read_parquet(datapath["metadata_parquet"])
-
-    # Filter metadata based on the split
-    mask = (meta.country == country) & (meta.split == split)
-    available = meta.loc[mask, "patch_id"].tolist()
-    if not available:
-        raise ValueError(f"No {split.upper()} patches found for country={country!r}")
-    if n_samples > len(available):
-        print(
-            f"Warning: Requested {n_samples} samples but only {len(available)} available. Using all."
-        )
-        n_samples = len(available)
-
-    rng = random.Random(seed)
-    sampled = rng.sample(available, k=n_samples)
-
-    split_at = int(n_samples * frac)
-    train_ids = set(sampled[:split_at])
-    val_ids = set(sampled[split_at:])
-
-    def _make_ds(keep_ids):
-        return BENv2DataSet(
-            data_dirs=datapath,
-            img_size=img_size_ben,
-            split=split,
-            include_snowy=include_snowy,
-            include_cloudy=include_cloudy,
-            patch_prefilter=lambda pid: pid in keep_ids,
-            transform=transform,
-        )
-
-    train_ds = _make_ds(train_ids)
-    val_ds = _make_ds(val_ids)
-    return train_ds, val_ds
-
-
-def get_datasets(
-    countries: List[str],
-    permutation: List[int],
-    split: str = "train",
-    include_snowy: bool = False,
-    include_cloudy: bool = False,
-    samples_per_country: int = None,
-    seed: int = 0,
-    frac=0.8,
-    model_module=None,  # Specify the model module
-) -> Tuple[List[BENv2DataSet], List[BENv2DataSet]]:
-    """
-    Dynamically load datasets for the specified countries and permutation.
-    Adjusts img_size based on the model_module.
-    """
-    train_datasets: List[BENv2DataSet] = []
-    val_datasets: List[BENv2DataSet] = []
-
-    for idx in permutation:
-        country = countries[idx]
-        train_ds, val_ds = load_country_train_val(
-            country,
-            samples_per_country,
-            seed,
-            include_snowy=include_snowy,
-            include_cloudy=include_cloudy,
-            split=split,
-            frac=frac,
-            model_module=model_module,  # Pass model_module argument
-        )
-        train_datasets.append(train_ds)
-        val_datasets.append(val_ds)
-
-    return train_datasets, val_datasets
-
-
-def default_metrics(y_true: List[Any], y_pred: List[Any]) -> Dict[str, float]:
-    """
-    Default evaluation metric: wraps sklearn.metrics.average_precision_score (micro average).
-    """
-    return {"micro_AP": average_precision_score(y_true, y_pred, average="micro")}
+# Dynamically add the parent directory to sys.path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../baseline")
+from baseline import (
+    datapath,
+    create_trainer,
+    get_datasets,
+    load_country_train_val,
+    load_country_train_val,
+    default_metrics,
+)
+from SpectralGPT import (
+    load_model,
+    eval_model,
+)
 
     # -------------------------------------------------------------------------
     #  Helper: randomly pick 'n' indices from a dataset
