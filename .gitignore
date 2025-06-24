@@ -11,3 +11,4 @@ __pycache__/
 log/
 softcon
 saved_models/
+baseline/baseline_save.py

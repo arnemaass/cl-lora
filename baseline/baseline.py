@@ -298,6 +298,21 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
         train_time = time.time() - start_train
         log.info(f"Training time: {train_time:.2f}s")
 
+        # Save LoRA and FC parameters
+        inner_model = getattr(pl_model, "model", pl_model)
+        if hasattr(inner_model, "save_lora_parameters"):
+            lora_path = os.path.join(save_dir, f"step{step}_lora.safetensors")
+            fc_path   = os.path.join(save_dir, f"step{step}_fc.safetensors")
+            if trainer.is_global_zero:
+                # Make sure to save LoRA and FC parameters only after parallelised training is finished
+                inner_model.save_lora_parameters(lora_path)
+                inner_model.save_fc_parameters(fc_path)
+                log.info(f"LoRA saved to {lora_path}; FC saved to {fc_path}")
+            else:
+                inner_model.save_lora_parameters(lora_path)
+                inner_model.save_fc_parameters(fc_path)
+                log.info(f"Skipping saving LoRA and FC parameters for step {step} (not global zero)")
+        
         # Save model
         if save_dir:
             path = os.path.join(save_dir, f"step{step}-{'-'.join(seen_countries)}.pkl")
@@ -390,13 +405,10 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
         frac=1,
         model_module=model_module,  # Pass model_module explicitly
     )
+    # Construct LightningModule
     if model_module == "SoftCon":
-        model = load_model(r=4)
-        # Reinitialize the LightningModule for each step
         pl_model = SoftConLightningModule(model, num_classes=19, lr=lr)
     elif model_module == "SpectralGPT":
-        # Reload the base model weights
-        model = load_model(r=4)
         pl_model = SpectralGPTLightningModule(model, num_classes=19, lr=lr)
     else:
         raise ValueError(f"Unknown model_module: {model_module}")
@@ -420,13 +432,38 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
 
         # Reinitialize the trainer for each step
         trainer = create_trainer(params)
-
+        
+        # Reinitialize LightningModule for each step while retaining the trained model
+        inner_model = pl_model.model 
+        if model_module == "SoftCon":
+            pl_model = SoftConLightningModule(inner_model, num_classes=19, lr=lr)
+        elif model_module == "SpectralGPT":
+            pl_model = SpectralGPTLightningModule(inner_model, num_classes=19, lr=lr)
+        else:
+            raise ValueError(f"Unknown model_module: {model_module}")
+        
         # Train
         start_train = time.time()
         trainer.fit(pl_model, train_loader, val_loader)
         train_time = time.time() - start_train
         log.info(f"Training time: {train_time:.2f}s")
 
+        # Save LoRA and FC parameters
+        inner_model = getattr(pl_model, "model", pl_model)
+        if hasattr(inner_model, "save_lora_parameters"):
+            lora_path = os.path.join(save_dir, f"step{step}_lora.safetensors")
+            fc_path   = os.path.join(save_dir, f"step{step}_fc.safetensors")
+            if trainer.is_global_zero:
+                # Make sure to save LoRA and FC parameters only after parallelised training is finished
+                inner_model.save_lora_parameters(lora_path)
+                inner_model.save_fc_parameters(fc_path)
+                log.info(f"LoRA saved to {lora_path}; FC saved to {fc_path}")
+            else:
+                inner_model.save_lora_parameters(lora_path)
+                inner_model.save_fc_parameters(fc_path)
+                log.info(f"Skipping saving LoRA and FC parameters for step {step} (not global zero)")
+        
+        
         if save_dir:
             path = os.path.join(save_dir, f"step{step}-{seen_countries[-1]}.pkl")
             joblib.dump(pl_model, path)
