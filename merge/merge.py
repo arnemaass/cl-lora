@@ -303,11 +303,11 @@ def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
             model_old = load_model(r=4)  # load old model
             model_new = load_model(r=4)  # load new model
 
-            pl_model_old = SpectralGPTLightningModule(
-                base_model, embed_dim=768, num_classes=19, lr=lr
+            pl_model_old = SoftConLightningModule(
+                base_model, num_classes=19, lr=lr
             )
-            pl_model_new = SpectralGPTLightningModule(
-                base_model, embed_dim=768, num_classes=19, lr=lr
+            pl_model_new = SoftConLightningModule(
+                base_model, num_classes=19, lr=lr
             )
 
         elif model_module == "SpectralGPT":
