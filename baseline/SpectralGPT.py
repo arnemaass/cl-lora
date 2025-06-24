@@ -149,8 +149,23 @@ class SpectralGPTLightningModule(L.LightningModule):
         self.log("val_loss", loss, prog_bar=True)
         self.log("val_acc", acc, prog_bar=True)
 
+
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.lr)
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode="min",  # Minimize the validation loss
+            factor=0.1,  # Reduce LR by a factor of 10
+            patience=2,  # Wait for epochs without improvement
+            threshold = 0.01,
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "monitor": "val_loss",  # Metric to monitor
+            },
+        }
 
 
 # --- Wrap train_model_replay with Lightning ---
