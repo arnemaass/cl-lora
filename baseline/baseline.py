@@ -47,7 +47,7 @@ def create_trainer(params: Dict[str, Any]) -> L.Trainer:
     # Early stopping callback
     early_stopping = EarlyStopping(
         monitor="val_loss",  # Metric to monitor
-        patience= 5, # Stop after 5 epochs without improvement
+        patience=5,  # Stop after 5 epochs without improvement
         mode="min",  # Minimize the validation loss
         min_delta=0.01,  # Minimum change to qualify as an improvement
         check_on_train_epoch_end=True,  # Check after each training epoch
@@ -72,7 +72,9 @@ def create_trainer(params: Dict[str, Any]) -> L.Trainer:
         max_epochs=params.get("epoch", 15),
         accelerator="auto",  # Automatically use GPU if available
         log_every_n_steps=50,
-        strategy= L.strategies.DDPStrategy(find_unused_parameters=True),  # Allow unused parameters
+        strategy=L.strategies.DDPStrategy(
+            find_unused_parameters=True
+        ),  # Allow unused parameters
         default_root_dir=params.get(
             "save_dir", "./saved_models"
         ),  # Directory for logs and checkpoints
@@ -228,11 +230,15 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
         model_module=model_module,  # Pass model_module explicitly
     )
 
-    #save unchanged lora_weights once
+    # save unchanged lora_weights once
 
     # (1) Compute an absolute directory under your home or your repo
-    repo_dir = os.path.dirname(os.path.abspath(__file__))  # e.g. .../anton/src/cl-lora/baseline
-    save_dir = os.path.join(repo_dir, "saved_models")  # e.g. .../anton/src/cl-lora/baseline/saved_models
+    repo_dir = os.path.dirname(
+        os.path.abspath(__file__)
+    )  # e.g. .../anton/src/cl-lora/baseline
+    save_dir = os.path.join(
+        repo_dir, "saved_models"
+    )  # e.g. .../anton/src/cl-lora/baseline/saved_models
     os.makedirs(save_dir, exist_ok=True)  # create it if needed
 
     # # (2) Build a fully‐qualified filename
@@ -252,11 +258,10 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
     #     model.load_lora_parameters(path_to_file)
     # model = load_model(r=4)
 
-
-    metrics_fn = params.get('metrics_fn', default_metrics)
-    save_dir = params.get('save_dir')
-    if save_dir: os.makedirs(save_dir, exist_ok=True)
-
+    metrics_fn = params.get("metrics_fn", default_metrics)
+    save_dir = params.get("save_dir")
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
 
     results = []
     for step in range(1, len(permutation) + 1):
@@ -279,15 +284,11 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
         if model_module == "SoftCon":
             # Reload the base model weights
             base_model = load_model(r=4)  # Load base model with pretrained weights
-            pl_model = SoftConLightningModule(
-                base_model, num_classes=19, lr=lr
-            )
+            pl_model = SoftConLightningModule(base_model, num_classes=19, lr=lr)
         elif model_module == "SpectralGPT":
             # Reload the base model weights
             base_model = load_model(r=4)
-            pl_model = SpectralGPTLightningModule(
-                base_model, num_classes=19, lr=lr
-            )
+            pl_model = SpectralGPTLightningModule(base_model, num_classes=19, lr=lr)
         else:
             raise ValueError(f"Unknown model_module: {model_module}")
 
@@ -392,15 +393,11 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
     if model_module == "SoftCon":
         model = load_model(r=4)
         # Reinitialize the LightningModule for each step
-        pl_model = SoftConLightningModule(
-            model, num_classes=19, lr=lr
-        )
+        pl_model = SoftConLightningModule(model, num_classes=19, lr=lr)
     elif model_module == "SpectralGPT":
         # Reload the base model weights
         model = load_model(r=4)
-        pl_model = SpectralGPTLightningModule(
-            model, num_classes=19, lr=lr
-        )
+        pl_model = SpectralGPTLightningModule(model, num_classes=19, lr=lr)
     else:
         raise ValueError(f"Unknown model_module: {model_module}")
 
