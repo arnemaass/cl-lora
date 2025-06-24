@@ -246,6 +246,28 @@ def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
     save_dir = params.get('save_dir')
     if save_dir: os.makedirs(save_dir, exist_ok=True)
 
+    # Load model
+    if model_module == "SoftCon":
+        model = load_model(r=4)  # load old model
+
+        pl_model = SpectralGPTLightningModule(
+            model, embed_dim=768, num_classes=19, lr=lr
+        )
+
+    elif model_module == "SpectralGPT":
+        model = load_model(r=4)  # load old model
+
+        pl_model = SpectralGPTLightningModule(
+            model, num_classes=19, lr=lr
+        )
+
+    else:
+        raise ValueError(f"Unknown model_module: {model_module}")
+
+    # Get first Model weights
+    # TODO load weigts for first task
+    lora_old = load_lora(1)
+
     # -------------------------------------------------------------------------
     #  Continual-learning loop with bounded replay memory
     # -------------------------------------------------------------------------
@@ -296,6 +318,8 @@ def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
             val_current, batch_size=batch_size, shuffle=False, num_workers=num_workers
         )
 
+        # TODO we need to load the new lora weights
+        lora_new = load_lora(step)
         # TODO we need to load the 2 models correctly
         # Reinitialize the trainer for each step
         trainer = create_trainer(params)
@@ -328,7 +352,7 @@ def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
         start_merge = time.time()
         if test_type=="ZipLoRA":
             from ziplora import ZipLoRaMerge
-            pl_model = ZipLoRaMerge(pl_model_old,pl_model_new,train_loader_old,train_loader_new,val_loader_old,val_loader_new,step,params)
+            pl_model, lora_old = ZipLoRaMerge(pl_model,lora_old,lora_new,train_loader_old,train_loader_new,val_loader_old,val_loader_new,step,params)
         if test_type == "LoRASoups":
             pl_model = LoRASoupsMerge()
         if test_type == "LoRAHub":
