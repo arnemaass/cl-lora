@@ -510,7 +510,7 @@ def test_task_tuning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
     """
     Task-specific tuning: Train the base model independently on each country.
     Each task (country) is trained from scratch without any continual learning.
-    This serves as the input for our merging strategies.
+    This trains the lora heads as input for our merging strategies.
     """
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger(__name__)
