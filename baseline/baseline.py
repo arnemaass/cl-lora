@@ -17,7 +17,6 @@ import yaml
 from configilm import util
 from configilm.extra.DataSets.BENv2_DataSet import BENv2DataSet
 from pytorch_lightning.callbacks import (
-    EarlyStopping,
     LearningRateMonitor,
     ModelCheckpoint,
 )
@@ -44,16 +43,6 @@ def create_trainer(params: Dict[str, Any]) -> L.Trainer:
     checkpointing, and learning rate scheduling.
     """
 
-    # Early stopping callback
-    early_stopping = EarlyStopping(
-        monitor="val_loss",  # Metric to monitor
-        patience=5,  # Stop after 5 epochs without improvement
-        mode="min",  # Minimize the validation loss
-        min_delta=0.01,  # Minimum change to qualify as an improvement
-        check_on_train_epoch_end=True,  # Check after each training epoch
-        verbose=True,
-    )
-
     # Model checkpoint callback
     checkpoint_callback = ModelCheckpoint(
         monitor="val_loss",  # Metric to monitor
@@ -78,7 +67,7 @@ def create_trainer(params: Dict[str, Any]) -> L.Trainer:
         default_root_dir=params.get(
             "save_dir", "./saved_models"
         ),  # Directory for logs and checkpoints
-        callbacks=[early_stopping, checkpoint_callback, lr_monitor],  # Add callbacks
+        callbacks=[checkpoint_callback, lr_monitor],  # Add callbacks
     )
     return trainer
 
@@ -185,8 +174,9 @@ def default_metrics(y_true: List[Any], y_pred: List[Any]) -> Dict[str, float]:
     """
     return {"micro_AP": average_precision_score(y_true, y_pred, average="micro")}
 
-
-# --- Experiments ---
+# ---------------------------------------------------------
+# FT FROM SRATCH
+# ---------------------------------------------------------
 def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
     """
     Continual Learning with full replay over permuted countries.
@@ -343,6 +333,10 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
 
     return pd.DataFrame(results)
 
+# ---------------------------------------------------------
+# CONTINUAL FINETUNING
+# ---------------------------------------------------------
+
 
 def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
     """
@@ -471,6 +465,139 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
 
     return pd.DataFrame(results)
 
+# ---------------------------------------------------------
+# TASK TUNING for merging 
+# ---------------------------------------------------------
+
+def test_task_tuning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
+    """
+    Task-specific tuning: Train the base model independently on each country.
+    Each task (country) is trained from scratch without any continual learning.
+    This serves as an upper bound baseline for individual task performance.
+    """
+    logging.basicConfig(level=logging.INFO)
+    log = logging.getLogger(__name__)
+
+    countries = params["countries"]
+    permutation = params["permutation"]
+    train_samples = params.get("train_samples")
+    test_samples = params.get("test_samples")
+    seed = params.get("seed", 0)
+    batch_size = params.get("batch_size", 16)
+    num_workers = params.get("num_workers", 4)
+    epoch = params.get("epoch", 15)
+    lr = float(params.get("lr", 1e-4))
+    model_module = params.get("model_module")  # Extract model_module from params
+
+    save_dir = params.get("save_dir")
+    metrics_fn = params.get("metrics_fn", default_metrics)
+
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+
+    # Load datasets
+    train_sets, val_sets = get_datasets(
+        countries,
+        permutation,
+        split="train",
+        include_snowy=params.get("include_snowy", False),
+        include_cloudy=params.get("include_cloudy", False),
+        samples_per_country=train_samples,
+        seed=seed,
+        model_module=model_module,  # Pass model_module explicitly
+    )
+    test_sets, _ = get_datasets(
+        countries,
+        permutation,
+        split="test",
+        include_snowy=params.get("include_snowy", False),
+        include_cloudy=params.get("include_cloudy", False),
+        samples_per_country=test_samples,
+        seed=seed,
+        frac=1,
+        model_module=model_module,  # Pass model_module explicitly
+    )
+
+    results = []
+    
+    # Train each country independently
+    for step in range(1, len(permutation) + 1):
+        country_idx = permutation[step - 1]
+        country = countries[country_idx]
+        log.info(f"Task {step}: Training independently on {country}")
+
+        # Load fresh base model for each task
+        if model_module == "SoftCon":
+            base_model = load_model(r=4)  # Load base model with pretrained weights
+            pl_model = SoftConLightningModule(base_model, num_classes=19, lr=lr)
+        elif model_module == "SpectralGPT":
+            base_model = load_model(r=4)
+            pl_model = SpectralGPTLightningModule(base_model, num_classes=19, lr=lr)
+        else:
+            raise ValueError(f"Unknown model_module: {model_module}")
+
+        # Train on current country only
+        train_loader = DataLoader(
+            train_sets[step - 1], 
+            batch_size=batch_size, 
+            shuffle=True, 
+            num_workers=num_workers
+        )
+        val_loader = DataLoader(
+            val_sets[step - 1], 
+            batch_size=batch_size, 
+            shuffle=False, 
+            num_workers=num_workers
+        )
+
+        # Reinitialize the trainer for each task
+        trainer = create_trainer(params)
+
+        # Train
+        start_train = time.time()
+        trainer.fit(pl_model, train_loader, val_loader)
+        train_time = time.time() - start_train
+        log.info(f"Training time for {country}: {train_time:.2f}s")
+
+        # Save model for this specific task
+        if save_dir:
+            path = os.path.join(save_dir, f"task{step}-{country}-independent.pkl")
+            joblib.dump(pl_model, path)
+            log.info(f"Model saved: {path}")
+
+        # Evaluate only on the current task's test set
+        eval_metrics = {}
+        start_eval = time.time()
+        test_loader = DataLoader(
+            test_sets[step - 1],
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+        )
+        m = eval_model(pl_model, test_loader)
+        for name, val in m.items():
+            eval_metrics[f"{country}_{name}"] = val
+        
+        eval_time = time.time() - start_eval
+        log.info(f"Evaluation time for {country}: {eval_time:.2f}s")
+
+        # For task tuning, we only have metrics for the current country
+        row = {
+            "step": step,
+            "country": country,
+            "train_time_s": train_time,
+            "eval_time_s": eval_time,
+        }
+        row.update(eval_metrics)
+        results.append(row)
+        log.info(f"Task {step} ({country}) Result: {row}")
+
+    return pd.DataFrame(results)
+
+
+# ---------------------------------------------------------
+#
+# ---------------------------------------------------------
 
 def main_from_config(config_path: str) -> pd.DataFrame:
     with open(config_path, "r") as f:
@@ -513,6 +640,8 @@ def main_from_config(config_path: str) -> pd.DataFrame:
         return test_finetuning_from_scratch(model, params)
     elif test_type == "no_replay":
         return test_continual_finetuning(model, params)
+    elif test_type == "task_tuning":
+        return test_task_tuning(model, params)
     else:
         raise ValueError(f"Unknown test_type: {test_type}")
 
