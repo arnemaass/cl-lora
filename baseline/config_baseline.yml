@@ -4,7 +4,7 @@
 test_type: no_replay
 
 # Modell-Definition
-model_module: SoftCon  # Options: 'SpectralGPT' or 'SoftCon'
+model_module: SpectralGPT  # Options: 'SpectralGPT' or 'SoftCon'
 
 # Parameter für die Tests
 params:
@@ -31,6 +31,6 @@ params:
   include_cloudy: false
 
 
-  save_dir: /faststorage/SpectralGPT/saved_models                # Verzeichnis zum Speichern der Modelle
+  save_dir: /faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/saved_models                # Verzeichnis zum Speichern der Modelle
   log_every_step: true
 

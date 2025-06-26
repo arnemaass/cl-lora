@@ -1,16 +1,16 @@
 test_type: "task_tuning"
-model_module: "SoftCon"  # or "SpectralGPT"
+model_module: "SpectralGPT" # or "SoftCon"
 
 params:
-  countries: ["Finland", "Ireland", "Serbia", "Austria", "Portugal"]
-  permutation: [0, 1, 2, 3, 4]  # indices for the countries
+  countries: ["Finland", "Ireland", "Serbia", "Portugal"]
+  permutation: [0, 1, 2, 3]  # indices for the countries
   train_samples: 5000  # samples per country for training
   test_samples: 500    # samples per country for testing
   seed: 42
-  batch_size: 32
+  batch_size: 64
   num_workers: 4
   epoch: 30
   lr: 1e-4
   include_snowy: false
   include_cloudy: false
-  save_dir: "./saved_models/task_tuning"
+  save_dir: /faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/task_tuning/saved_models                # Verzeichnis zum Speichern der Modelle
