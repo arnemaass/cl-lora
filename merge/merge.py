@@ -59,8 +59,24 @@ def sample_subset(dataset, n, seed):
 # --- Experiments ---
 def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
     """
-    Continual Learning with full replay over permuted countries.
-    Always starts training from the base model weights at each step.
+    TODO: Expected Behavior (to be implemented):
+    - load a stratified subset (5 to 10 %) for every orginal task
+    - use the base model without wrapping LoRA_vit
+    - create a LightningModule for the model
+    - load the LoRA weights for all tasks
+    - load the classifier weights for all tasks
+    - for task i in countries:
+        - start at task 2 
+        - pool the tasks data and create train and validation sets
+        - merge the classifiers based on sample size by task
+        - TODO: Apply Specific Merging Strategy:
+            - merges the LoRA weights of tasks 
+            - gradient based merging: train the classfier in the same process
+            - LoRAHub: first merge then train the classifier? 
+            - 1 epoch with lr 1e-4 
+            - return the merged model, lora_weights and classifier weights
+        - Evaluate the merged model on the combined test set of all tasks
+        - increment to the next task 
     """
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger(__name__)
