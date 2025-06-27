@@ -21,9 +21,9 @@ params:
   seed: 42                              # Seed für Reproduzierbarkeit
 
   # DataLoader-Parameter
-  batch_size: 64
+  batch_size: 16
   num_workers: 4
-  epoch: 30
+  epoch: 20
   lr: 1e-4
 
   # Bildgröße und Filteroptionen

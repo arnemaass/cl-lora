@@ -596,6 +596,21 @@ def test_task_tuning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
         train_time = time.time() - start_train
         log.info(f"Training time for {country}: {train_time:.2f}s")
 
+        # Save LoRA and FC parameters
+        inner_model = getattr(pl_model, "model", pl_model)
+        if hasattr(inner_model, "save_lora_parameters") and save_dir:
+            lora_path = os.path.join(save_dir, f"task{step}_{country}_lora.safetensors")
+            fc_path   = os.path.join(save_dir, f"task{step}_{country}_fc.safetensors")
+            if trainer.is_global_zero:
+                # Make sure to save LoRA and FC parameters only after parallelised training is finished
+                inner_model.save_lora_parameters(lora_path)
+                inner_model.save_fc_parameters(fc_path)
+                log.info(f"LoRA saved to {lora_path}; FC saved to {fc_path}")
+            else:
+                inner_model.save_lora_parameters(lora_path)
+                inner_model.save_fc_parameters(fc_path)
+                log.info(f"Skipping saving LoRA and FC parameters for task {step} (not global zero)")
+
         # Save model for this specific task
         if save_dir:
             path = os.path.join(save_dir, f"task{step}-{country}-independent.pkl")
@@ -630,7 +645,6 @@ def test_task_tuning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
         log.info(f"Task {step} ({country}) Result: {row}")
 
     return pd.DataFrame(results)
-
 
 # ---------------------------------------------------------
 #

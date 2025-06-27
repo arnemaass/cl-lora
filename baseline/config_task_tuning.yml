@@ -7,9 +7,9 @@ params:
   train_samples: 5000  # samples per country for training
   test_samples: 500    # samples per country for testing
   seed: 42
-  batch_size: 64
+  batch_size: 16
   num_workers: 4
-  epoch: 30
+  epoch: 20
   lr: 1e-4
   include_snowy: false
   include_cloudy: false
