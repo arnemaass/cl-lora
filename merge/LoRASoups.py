@@ -183,16 +183,17 @@ def LoRASoupsMerge(pl_model, train_loader, val_loader, lora_head1, lora_head2, f
         for param in classifier.parameters():
             param.requires_grad = True
     
-    # 7. Training loop for learnable mode
-    if mode == 'learnable':
+    # 7. Training loop - needed for both modes to train the merged classifier
+    if True:  # Train classifier in both modes
         trainable_params = []
         
-        # Add alpha parameters
-        for param in alpha_params.values():
-            if isinstance(param, nn.Parameter):
-                trainable_params.append(param)
+        # Add alpha parameters only in learnable mode
+        if mode == 'learnable':
+            for param in alpha_params.values():
+                if isinstance(param, nn.Parameter):
+                    trainable_params.append(param)
         
-        # Add classifier parameters
+        # Add classifier parameters for both modes
         if classifier is not None:
             trainable_params.extend(classifier.parameters())
         
@@ -228,7 +229,8 @@ def LoRASoupsMerge(pl_model, train_loader, val_loader, lora_head1, lora_head2, f
                     num_batches += 1
                 
                 avg_loss = total_loss / max(num_batches, 1)
-                print(f"Epoch {epoch + 1}/{num_epochs}, Average Loss: {avg_loss:.4f}")
+                mode_desc = "learnable alphas + classifier" if mode == 'learnable' else "classifier only"
+                print(f"Epoch {epoch + 1}/{num_epochs}, Training {mode_desc}, Average Loss: {avg_loss:.4f}")
     
     # 8. Return merged model, LoRA weights, and classifier weights
     return pl_model, merged_lora_weights, merged_classifier
