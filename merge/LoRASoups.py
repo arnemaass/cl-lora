@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 
 
-def LoRASoups(model, train_loader, val_loader, lora_head1, lora_head2, fc_head1, fc_head2, mode = 'learnable'):
+def LoRASoupsMerge(pl_model, train_loader, val_loader, lora_head1, lora_head2, fc_head1, fc_head2, mode = 'learnable'):
     '''
     Apply LoraSoups by merging LoRA weights from multiple models.
 
@@ -14,7 +14,9 @@ def LoRASoups(model, train_loader, val_loader, lora_head1, lora_head2, fc_head1,
     3. Initialze as many alpha values as LoRA heads
     4. Add the additional LoRA Heads mutlpiplied by their alpha coeffiecients to the representive layer of the base model. 
     5. If mode = learnable: set the alpha values as trainable, else alpha = 1/n, where n is the number of LoRA heads.
-    6. Set 
+    6. Unfreeze the classification head
+    7. Train the alpha values together with the classification head 
+    8. Return the merged model, LoRA weights and classifier weights
 
     
     The update per layer l is computed as:
@@ -32,10 +34,10 @@ def LoRASoups(model, train_loader, val_loader, lora_head1, lora_head2, fc_head1,
         
     '''
 
-    for param in model.parameters():
+    for param in pl_model.parameters():
         param.requires_grad = False
 
-    for adapter in model:
+    for adapter in pl_model:
         for param in adapter.parameters():
             param.requires_grad = False
 
