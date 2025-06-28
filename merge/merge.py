@@ -2,86 +2,80 @@ import argparse
 import json
 import logging
 import os
-import random
+import sys
 import time
 from collections import defaultdict
-from typing import Any, Dict, List, Tuple
-import torch
+from typing import Any, Dict
 
 import joblib
 import pandas as pd
-import pytorch_lightning as L
+import torch
 import yaml
-import sys
 
 # --- DataSet factory based on configilm / BENv2 ---
-from configilm import util
-from configilm.extra.DataSets.BENv2_DataSet import BENv2DataSet
-from pytorch_lightning.callbacks import (
-    EarlyStopping,
-    LearningRateMonitor,
-    ModelCheckpoint,
-)
-from sklearn.metrics import average_precision_score
 from torch.utils.data import ConcatDataset, DataLoader, Subset
-import math
 
 # Dynamically add the parent directory to sys.path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../baseline")
-from baseline import (
-    datapath,
-    create_trainer,
-    get_datasets,
-    load_country_train_val,
-    load_country_train_val,
-    default_metrics,
-)
 from SpectralGPT import (
-    load_model,
     eval_model,
+    load_model,
+)
+
+from baseline import (
+    get_datasets,
 )
 
 # -------------------------------------------------------------------------
 #  Helper: randomly pick 'n' indices from a dataset
 # -------------------------------------------------------------------------
 
+
 def sample_subset(dataset, n, seed):
     """Return a Subset of size min(n, len(dataset))."""
     if n >= len(dataset):
         return dataset  # keep the whole set
     g = torch.Generator().manual_seed(seed)  # reproducible
-    idx = torch.randperm(len(dataset), generator=g)[: n]
+    idx = torch.randperm(len(dataset), generator=g)[:n]
 
     return Subset(dataset, idx.tolist())
 
+
 # -------------------------------------------------------------------------
-#  TODO Helper: functions that need to be implemented
+#  Helpers: load the weights
 # -------------------------------------------------------------------------
+
 
 def load_lora_weights(task_idx: int):
     """Load LoRA weights for a specific task."""
-    # Implementation depends on your LoRA weight storage format
     try:
-        # Example implementation - adjust path and format as needed
-        weights_path = f"checkpoints/task_{task_idx}/lora_weights.pt"
-        return torch.load(weights_path)
-    except FileNotFoundError:
+        from safetensors.torch import load_file
+
+        lora_path = f"/faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/task_tuning/saved_models/task{task_idx}_Finland_lora.safetensors"
+        if os.path.exists(lora_path):
+            return load_file(lora_path)
+    except (FileNotFoundError, ImportError) as e:
+        logging.warning(f"Could not load LoRA weights for task {task_idx}: {e}")
         return None
+
 
 def load_classifier_weights(task_idx: int):
     """Load classifier weights for a specific task."""
-    # Implementation depends on your classifier weight storage format
     try:
-        # Example implementation - adjust path and format as needed
-        weights_path = f"checkpoints/task_{task_idx}/classifier_weights.pt"
-        return torch.load(weights_path)
-    except FileNotFoundError:
+        from safetensors.torch import load_file
+
+        fc_path = f"/faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/task_tuning/saved_models/task{task_idx}_Finland_fc.safetensors"
+        if os.path.exists(fc_path):
+            return load_file(fc_path)
+    except (FileNotFoundError, ImportError) as e:
+        logging.warning(f"Could not load classifier weights for task {task_idx}: {e}")
         return None
 
 
 # -------------------------------------------------------------------------
 #  MERGING FUNCTIONS
 # -------------------------------------------------------------------------
+
 
 def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
     """
@@ -92,17 +86,17 @@ def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
     - load the LoRA weights for all tasks
     - load the classifier weights for all tasks
     - for task i in countries:
-        - start at task 2 
+        - start at task 2
         - pool the tasks data and create train and validation sets
         - merge the classifiers based on sample size by task
         - TODO: Handled Externally: apply specific Merging Strategy:
-            - merges the LoRA weights of tasks 
+            - merges the LoRA weights of tasks
             - gradient based merging ( eg. LoRA Soups and ZipLora): train the classfier in the same process
-            - LoRAHub: first merge then train the classifier? 
-            - 1 epoch with lr 1e-4 
+            - LoRAHub: first merge then train the classifier?
+            - 1 epoch with lr 1e-4
             - return the merged model, lora_weights and classifier weights
         - Evaluate the merged model on the combined test set of all tasks
-        - increment to the next task 
+        - increment to the next task
     """
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger(__name__)
@@ -129,7 +123,7 @@ def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
         frac=0.9,
         model_module=model_module,
     )
-    
+
     test_sets, _ = get_datasets(
         countries,
         permutation,
@@ -148,15 +142,17 @@ def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
     for i, (train_set, val_set) in enumerate(zip(full_train_sets, full_val_sets)):
         train_subset_size = max(1, int(len(train_set) * subset_fraction))
         val_subset_size = max(1, int(len(val_set) * subset_fraction))
-        
+
         train_subsets.append(sample_subset(train_set, train_subset_size, seed + i))
         val_subsets.append(sample_subset(val_set, val_subset_size, seed + i))
-        
-        log.info(f"Task {i+1} subset sizes: train={train_subset_size}/{len(train_set)}, "
-                f"val={val_subset_size}/{len(val_set)}")
 
-    save_dir = params.get('save_dir')
-    if save_dir: 
+        log.info(
+            f"Task {i + 1} subset sizes: train={train_subset_size}/{len(train_set)}, "
+            f"val={val_subset_size}/{len(val_set)}"
+        )
+
+    save_dir = params.get("save_dir")
+    if save_dir:
         os.makedirs(save_dir, exist_ok=True)
 
     # Load base model without LoRA wrapping
@@ -170,7 +166,7 @@ def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
     # Pre-load all LoRA weights and classifier weights for all tasks
     all_lora_weights = {}
     all_classifier_weights = {}
-    
+
     for task_idx in range(1, len(countries) + 1):
         try:
             all_lora_weights[task_idx] = load_lora_weights(task_idx)
@@ -181,7 +177,7 @@ def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
 
     # Main loop: start at task 2 and increment
     results = []
-    
+
     for current_task in range(2, len(permutation) + 1):
         seen_task_indices = permutation[:current_task]
         seen_countries = [countries[i] for i in seen_task_indices]
@@ -190,18 +186,20 @@ def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
         # Pool the task data and create train/validation sets
         pooled_train_sets = [train_subsets[i] for i in seen_task_indices]
         pooled_val_sets = [val_subsets[i] for i in seen_task_indices]
-        
+
         # Calculate sample sizes for each task (for weighted merging)
         task_sample_sizes = [len(train_subsets[i]) for i in seen_task_indices]
         total_samples = sum(task_sample_sizes)
         task_weights = [size / total_samples for size in task_sample_sizes]
-        
-        log.info(f"Task weights based on sample sizes: {dict(zip(seen_countries, task_weights))}")
+
+        log.info(
+            f"Task weights based on sample sizes: {dict(zip(seen_countries, task_weights))}"
+        )
 
         # Create concatenated datasets
         concat_train = ConcatDataset(pooled_train_sets)
         concat_val = ConcatDataset(pooled_val_sets)
-        
+
         train_loader = DataLoader(
             concat_train, batch_size=batch_size, shuffle=True, num_workers=num_workers
         )
@@ -211,41 +209,60 @@ def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
 
         # Create LightningModule for the base model
         if model_module == "SpectralGPT":
-            pl_model = SpectralGPTLightningModule(
-                base_model, num_classes=19, lr=lr
-            )
+            pl_model = SpectralGPTLightningModule(base_model, num_classes=19, lr=lr)
         elif model_module == "SoftCon":
-            pl_model = SoftConLightningModule(
-                base_model, num_classes=19, lr=lr
-            )
+            pl_model = SoftConLightningModule(base_model, num_classes=19, lr=lr)
         else:
             raise ValueError(f"Unknown model_module: {model_module}")
 
         # Apply specific merging strategy
         start_merge = time.time()
-        
+
         # Collect LoRA weights and classifier weights for current tasks
-        current_lora_weights = [all_lora_weights.get(i+1) for i in seen_task_indices]
-        current_classifier_weights = [all_classifier_weights.get(i+1) for i in seen_task_indices]
-        
-        # TODO: 
+        current_lora_weights = [all_lora_weights.get(i + 1) for i in seen_task_indices]
+        current_classifier_weights = [
+            all_classifier_weights.get(i + 1) for i in seen_task_indices
+        ]
+
+        # TODO:
         if test_type == "ZipLoRA":
             from ziplora import ZipLoRaMerge
+
             merged_model, merged_lora, merged_classifier = ZipLoRaMerge(
-                pl_model, current_lora_weights, current_classifier_weights,
-                task_weights, train_loader, val_loader, current_task, params
+                pl_model,
+                current_lora_weights,
+                current_classifier_weights,
+                task_weights,
+                train_loader,
+                val_loader,
+                current_task,
+                params,
             )
         elif test_type == "LoRASoups":
             from LoRASoups import LoRASoupsMerge
+
             merged_model, merged_lora, merged_classifier = LoRASoupsMerge(
-                pl_model, train_loader, val_loader, lora_head1, lora_head2, fc_head1, fc_head2, params
+                pl_model,
+                train_loader,
+                val_loader,
+                lora_head1,
+                lora_head2,
+                fc_head1,
+                fc_head2,
+                params,
             )
         elif test_type == "LoRAHub":
             from LoRAHub import LoRAHubMerge
+
             # LoRAHub: first merge then train classifier
             merged_model, merged_lora, merged_classifier = LoRAHubMerge(
-                pl_model, current_lora_weights, current_classifier_weights,
-                task_weights, train_loader, val_loader, params
+                pl_model,
+                current_lora_weights,
+                current_classifier_weights,
+                task_weights,
+                train_loader,
+                val_loader,
+                params,
             )
         else:
             raise ValueError(f"Unknown test_type: {test_type}")
@@ -255,25 +272,30 @@ def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
 
         # Save merged model
         if save_dir:
-            path = os.path.join(save_dir, f"merged_task{current_task}-{'-'.join(seen_countries)}.pkl")
-            joblib.dump({
-                'model': merged_model,
-                'lora_weights': merged_lora,
-                'classifier_weights': merged_classifier
-            }, path)
+            path = os.path.join(
+                save_dir, f"merged_task{current_task}-{'-'.join(seen_countries)}.pkl"
+            )
+            joblib.dump(
+                {
+                    "model": merged_model,
+                    "lora_weights": merged_lora,
+                    "classifier_weights": merged_classifier,
+                },
+                path,
+            )
             log.info(f"Merged model saved: {path}")
 
         # Evaluate the merged model on the combined test set of all seen tasks
         eval_metrics: Dict[str, float] = {}
         start_eval = time.time()
-        
+
         # Create combined test set for all seen tasks
         combined_test_sets = [test_sets[i] for i in seen_task_indices]
         combined_test = ConcatDataset(combined_test_sets)
         combined_test_loader = DataLoader(
             combined_test, batch_size=batch_size, shuffle=False, num_workers=num_workers
         )
-        
+
         # Evaluate on combined test set
         combined_metrics = eval_model(merged_model, combined_test_loader)
         for name, val in combined_metrics.items():
@@ -314,11 +336,14 @@ def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
         row.update(eval_metrics)
         row.update(mean_metrics)
         results.append(row)
-        
-        log.info(f"Task {current_task} completed. Combined test accuracy: "
-                f"{eval_metrics.get('combined_accuracy', 'N/A')}")
+
+        log.info(
+            f"Task {current_task} completed. Combined test accuracy: "
+            f"{eval_metrics.get('combined_accuracy', 'N/A')}"
+        )
 
     return pd.DataFrame(results)
+
 
 # ------------------------------------------------------------------
 # - ANTONS VERSION
@@ -333,17 +358,17 @@ def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
 #     - load the LoRA weights for all tasks
 #     - load the classifier weights for all tasks
 #     - for task i in countries:
-#         - start at task 2 
+#         - start at task 2
 #         - pool the tasks data and create train and validation sets
 #         - merge the classifiers based on sample size by task
 #         - TODO: Handled ExternallyApply: apply specific Merging Strategy:
-#             - merges the LoRA weights of tasks 
+#             - merges the LoRA weights of tasks
 #             - gradient based merging: train the classfier in the same process
-#             - LoRAHub: first merge then train the classifier? 
-#             - 1 epoch with lr 1e-4 
+#             - LoRAHub: first merge then train the classifier?
+#             - 1 epoch with lr 1e-4
 #             - return the merged model, lora_weights and classifier weights
 #         - Evaluate the merged model on the combined test set of all tasks
-#         - increment to the next task 
+#         - increment to the next task
 #     """
 #     logging.basicConfig(level=logging.INFO)
 #     log = logging.getLogger(__name__)
@@ -549,8 +574,9 @@ def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
 #     return pd.DataFrame(results)
 
 # ------------------------------------------------------------------
-# 
+#
 # ------------------------------------------------------------------
+
 
 def main_from_config(config_path: str) -> pd.DataFrame:
     with open(config_path, "r") as f:
@@ -589,6 +615,7 @@ def main_from_config(config_path: str) -> pd.DataFrame:
 
     test_type = cfg["test_type"]
     test_merging(test_type, params)
+
 
 def setup_logging():
     logging.basicConfig(

@@ -4,16 +4,12 @@ import sys
 from datetime import datetime
 
 import numpy as np
-import pandas as pd
 import pytorch_lightning as L
 import torch
 import torch.nn as nn
 from configilm import util
-from configilm.extra.DataSets import BENv2_DataSet
 from sklearn.metrics import average_precision_score
-from torch.utils.data import DataLoader, random_split
 from torchvision import transforms
-from tqdm import tqdm
 
 # Set random seeds for reproducibility
 seed = 42
@@ -98,7 +94,7 @@ def load_softcon_encoder(model, ckpt_path):
 
 
 # --- Model Loading ---
-def load_model(r=4):
+def load_model(r=4, use_lora=True):
     """Load SOFTCON model with LoRA and classification head"""
     sys.path.append("/home/arne/softcon")
     from models.dinov2 import vision_transformer as dinov2_vitb
@@ -120,31 +116,37 @@ def load_model(r=4):
     )
     model_vitb14.load_state_dict(ckpt_vitb14)
 
-    # Wrap with LoRA
-    sys.path.append("/home/arne/LoRA-ViT")
-    from lora import LoRA_ViT_timm
+    if use_lora:
+        # Wrap with LoRA
+        sys.path.append("/home/arne/LoRA-ViT")
+        from lora import LoRA_ViT_timm
 
-    lora_model = LoRA_ViT_timm(model_vitb14, num_classes=0, r=r, alpha=16)
+        lora_model = LoRA_ViT_timm(model_vitb14, num_classes=0, r=r, alpha=16)
 
-    # Add classification head
-    num_classes = 19
-    classifier = nn.Linear(model_vitb14.embed_dim, num_classes)
-    lora_with_head = nn.Sequential(lora_model, classifier)
+        # Add classification head
+        num_classes = 19
+        classifier = nn.Linear(model_vitb14.embed_dim, num_classes)
+        lora_with_head = nn.Sequential(lora_model, classifier)
 
-    # Ensure classification head is trainable
-    for param in classifier.parameters():
-        param.requires_grad = True
+        # Ensure classification head is trainable
+        for param in classifier.parameters():
+            param.requires_grad = True
 
-    print(lora_with_head)
-    print(
-        "Number of trainable parameters (w/ LoRA):",
-        sum(p.numel() for p in lora_with_head.parameters() if p.requires_grad),
-    )
+        print(lora_with_head)
+        print(
+            "Number of trainable parameters (w/ LoRA):",
+            sum(p.numel() for p in lora_with_head.parameters() if p.requires_grad),
+        )
 
-    # Move model to device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    lora_with_head.to(device)
-    return lora_with_head
+        # Move model to device
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        lora_with_head.to(device)
+        return lora_with_head
+    else:
+        # Move base model to device as well
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model_vitb14.to(device)
+        return model_vitb14
 
 
 # --- Lightning Module ---
@@ -156,7 +158,7 @@ class SoftConLightningModule(L.LightningModule):
         self.lr = lr
 
     def forward(self, x):
-        return self.model(x) 
+        return self.model(x)
 
     def training_step(self, batch, batch_idx):
         imgs, labels = batch
@@ -196,7 +198,7 @@ class SoftConLightningModule(L.LightningModule):
             mode="min",  # Minimize the validation loss
             factor=0.1,  # Reduce LR by a factor of 10
             patience=2,  # Wait for epochs without improvement
-            threshold = 0.01,
+            threshold=0.01,
         )
         return {
             "optimizer": optimizer,

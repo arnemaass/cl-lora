@@ -1,31 +1,19 @@
-import sys
 import random
-import pandas as pd
+import warnings
+
 import numpy as np
+import pytorch_lightning as L
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, random_split
-from torchvision import transforms
-import pytorch_lightning as L
-
-from configilm import util
-from configilm.extra.DataSets import BENv2_DataSet
-from configilm.extra.DataModules import BENv2_DataModule
-from tqdm import tqdm
-from sklearn.metrics import average_precision_score
-import warnings
 from sklearn.exceptions import UndefinedMetricWarning
+from sklearn.metrics import average_precision_score
+from torchvision import transforms
 
 # at the top of your script/notebook
 warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
 
 import os
-
-
-
 from datetime import datetime
-import os
-import csv
 
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 log_file = f"train_log_{timestamp}.csv"
@@ -46,10 +34,10 @@ torch.cuda.manual_seed_all(seed)
 generator = torch.Generator().manual_seed(seed)
 
 
-import importlib.util
-from pathlib import Path
-from utils.pos_embed import interpolate_pos_embed
+
 from model.video_vit import vit_base_patch8_128
+from utils.pos_embed import interpolate_pos_embed
+
 # Use environment variable or relative path
 
 
@@ -89,7 +77,7 @@ def load_mae_encoder(model, ckpt_path):
     return model
 
 
-def load_model(r=4):
+def load_model(r=4, use_lora=True):
     # --- Model setup ---
 
     # load pretrained weights
@@ -101,24 +89,31 @@ def load_model(r=4):
         f"ViT trainable parameters w/o LoRA: {num_params}"
     )  # trainable parameters: 86859496
 
-    # Wrap with LoRA
-    from model.lora_vit import LoRA_SViT
+    if use_lora:  # This is the cleanest way
+        # Wrap with LoRA
+        from model.lora_vit import LoRA_SViT
 
-    lora_model = LoRA_SViT(model, r=r, alpha=16, num_classes=19)
+        lora_model = LoRA_SViT(model, r=r, alpha=16, num_classes=19)
 
-    print(lora_model)
-    print(
-        "\nNumber of trainable parameters: (w/ LoRA)",
-        sum(p.numel() for p in lora_model.parameters() if p.requires_grad),
-    )
+        print(lora_model)
+        print(
+            "\nNumber of trainable parameters: (w/ LoRA)",
+            sum(p.numel() for p in lora_model.parameters() if p.requires_grad),
+        )
 
-    # Move model to device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    lora_model.to(device)
+        # Move model to device
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        lora_model.to(device)
 
-    return lora_model
+        return lora_model
+    else:
+        # Move base model to device as well
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model.to(device)
+        return model
 
-# --- Lightning Module --- # TODO
+
+# --- Lightning Module --- 
 class SpectralGPTLightningModule(L.LightningModule):
     def __init__(self, model, num_classes, lr=1e-4):
         super().__init__()
@@ -149,7 +144,6 @@ class SpectralGPTLightningModule(L.LightningModule):
         self.log("val_loss", loss, prog_bar=True)
         self.log("val_acc", acc, prog_bar=True)
 
-
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -157,7 +151,7 @@ class SpectralGPTLightningModule(L.LightningModule):
             mode="min",  # Minimize the validation loss
             factor=0.1,  # Reduce LR by a factor of 10
             patience=2,  # Wait for epochs without improvement
-            threshold = 0.01,
+            threshold=0.01,
         )
         return {
             "optimizer": optimizer,
@@ -302,11 +296,11 @@ train_transform = transforms.Compose(
             ]
         ),
         transforms.RandomResizedCrop(
-            size=(128, 128), scale=(0.8, 1.0), interpolation=transforms.InterpolationMode.BICUBIC
+            size=(128, 128),
+            scale=(0.8, 1.0),
+            interpolation=transforms.InterpolationMode.BICUBIC,
         ),  # Random resized crop
-        NormalizeWithStats(
-            train_mean, train_std
-        ), 
+        NormalizeWithStats(train_mean, train_std),
     ]
 )
 
@@ -314,8 +308,6 @@ val_transform = transforms.Compose(
     [
         transforms.Resize((128, 128)),
         SelectChannels(),
-        NormalizeWithStats(
-            train_mean, train_std
-        ), 
+        NormalizeWithStats(train_mean, train_std),
     ]
 )

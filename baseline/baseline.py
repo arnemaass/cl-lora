@@ -6,11 +6,11 @@ import random
 import time
 from collections import defaultdict
 from typing import Any, Dict, List, Tuple
-import torch
 
 import joblib
 import pandas as pd
 import pytorch_lightning as L
+import torch
 import yaml
 
 # --- DataSet factory based on configilm / BENv2 ---
@@ -174,6 +174,7 @@ def default_metrics(y_true: List[Any], y_pred: List[Any]) -> Dict[str, float]:
     """
     return {"micro_AP": average_precision_score(y_true, y_pred, average="micro")}
 
+
 # ---------------------------------------------------------
 # FT FROM SRATCH
 # ---------------------------------------------------------
@@ -292,7 +293,7 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
         inner_model = getattr(pl_model, "model", pl_model)
         if hasattr(inner_model, "save_lora_parameters"):
             lora_path = os.path.join(save_dir, f"step{step}_lora.safetensors")
-            fc_path   = os.path.join(save_dir, f"step{step}_fc.safetensors")
+            fc_path = os.path.join(save_dir, f"step{step}_fc.safetensors")
             if trainer.is_global_zero:
                 # Make sure to save LoRA and FC parameters only after parallelised training is finished
                 inner_model.save_lora_parameters(lora_path)
@@ -301,8 +302,10 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
             else:
                 inner_model.save_lora_parameters(lora_path)
                 inner_model.save_fc_parameters(fc_path)
-                log.info(f"Skipping saving LoRA and FC parameters for step {step} (not global zero)")
-        
+                log.info(
+                    f"Skipping saving LoRA and FC parameters for step {step} (not global zero)"
+                )
+
         # Save model
         if save_dir:
             path = os.path.join(save_dir, f"step{step}-{'-'.join(seen_countries)}.pkl")
@@ -347,6 +350,7 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
         log.info(f"Result: {row}")
 
     return pd.DataFrame(results)
+
 
 # ---------------------------------------------------------
 # CONTINUAL FINETUNING
@@ -426,16 +430,16 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
 
         # Reinitialize the trainer for each step
         trainer = create_trainer(params)
-        
+
         # Reinitialize LightningModule for each step while retaining the trained model
-        inner_model = pl_model.model 
+        inner_model = pl_model.model
         if model_module == "SoftCon":
             pl_model = SoftConLightningModule(inner_model, num_classes=19, lr=lr)
         elif model_module == "SpectralGPT":
             pl_model = SpectralGPTLightningModule(inner_model, num_classes=19, lr=lr)
         else:
             raise ValueError(f"Unknown model_module: {model_module}")
-        
+
         # Train
         start_train = time.time()
         trainer.fit(pl_model, train_loader, val_loader)
@@ -446,7 +450,7 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
         inner_model = getattr(pl_model, "model", pl_model)
         if hasattr(inner_model, "save_lora_parameters"):
             lora_path = os.path.join(save_dir, f"step{step}_lora.safetensors")
-            fc_path   = os.path.join(save_dir, f"step{step}_fc.safetensors")
+            fc_path = os.path.join(save_dir, f"step{step}_fc.safetensors")
             if trainer.is_global_zero:
                 # Make sure to save LoRA and FC parameters only after parallelised training is finished
                 inner_model.save_lora_parameters(lora_path)
@@ -455,9 +459,10 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
             else:
                 inner_model.save_lora_parameters(lora_path)
                 inner_model.save_fc_parameters(fc_path)
-                log.info(f"Skipping saving LoRA and FC parameters for step {step} (not global zero)")
-        
-        
+                log.info(
+                    f"Skipping saving LoRA and FC parameters for step {step} (not global zero)"
+                )
+
         if save_dir:
             path = os.path.join(save_dir, f"step{step}-{seen_countries[-1]}.pkl")
             joblib.dump(pl_model, path)
@@ -502,9 +507,11 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
 
     return pd.DataFrame(results)
 
+
 # ---------------------------------------------------------
-# TASK TUNING for merging 
+# TASK TUNING for merging
 # ---------------------------------------------------------
+
 
 def test_task_tuning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
     """
@@ -556,7 +563,7 @@ def test_task_tuning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
     )
 
     results = []
-    
+
     # Train each country independently
     for step in range(1, len(permutation) + 1):
         country_idx = permutation[step - 1]
@@ -575,16 +582,16 @@ def test_task_tuning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
 
         # Train on current country only
         train_loader = DataLoader(
-            train_sets[step - 1], 
-            batch_size=batch_size, 
-            shuffle=True, 
-            num_workers=num_workers
+            train_sets[step - 1],
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=num_workers,
         )
         val_loader = DataLoader(
-            val_sets[step - 1], 
-            batch_size=batch_size, 
-            shuffle=False, 
-            num_workers=num_workers
+            val_sets[step - 1],
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers,
         )
 
         # Reinitialize the trainer for each task
@@ -600,7 +607,7 @@ def test_task_tuning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
         inner_model = getattr(pl_model, "model", pl_model)
         if hasattr(inner_model, "save_lora_parameters") and save_dir:
             lora_path = os.path.join(save_dir, f"task{step}_{country}_lora.safetensors")
-            fc_path   = os.path.join(save_dir, f"task{step}_{country}_fc.safetensors")
+            fc_path = os.path.join(save_dir, f"task{step}_{country}_fc.safetensors")
             if trainer.is_global_zero:
                 # Make sure to save LoRA and FC parameters only after parallelised training is finished
                 inner_model.save_lora_parameters(lora_path)
@@ -609,7 +616,9 @@ def test_task_tuning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
             else:
                 inner_model.save_lora_parameters(lora_path)
                 inner_model.save_fc_parameters(fc_path)
-                log.info(f"Skipping saving LoRA and FC parameters for task {step} (not global zero)")
+                log.info(
+                    f"Skipping saving LoRA and FC parameters for task {step} (not global zero)"
+                )
 
         # Save model for this specific task
         if save_dir:
@@ -629,7 +638,7 @@ def test_task_tuning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
         m = eval_model(pl_model, test_loader)
         for name, val in m.items():
             eval_metrics[f"{country}_{name}"] = val
-        
+
         eval_time = time.time() - start_eval
         log.info(f"Evaluation time for {country}: {eval_time:.2f}s")
 
@@ -646,9 +655,11 @@ def test_task_tuning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
 
     return pd.DataFrame(results)
 
+
 # ---------------------------------------------------------
 #
 # ---------------------------------------------------------
+
 
 def main_from_config(config_path: str) -> pd.DataFrame:
     with open(config_path, "r") as f:
