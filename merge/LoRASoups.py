@@ -135,10 +135,10 @@ def LoRASoupsMerge(pl_model, train_loader, val_loader, lora_head1, lora_head2, f
                 'alpha_block': alpha_block,
                 'update': lora_update
             }
-            
+            # TODO 
             # Apply LoRA update to the corresponding layer in the base model
             try:
-                layer_name = f'blocks.{layer_idx}.attn.qkv'  # Example mapping - adjust based on your model
+                layer_name = f'blocks.{layer_idx}.attn.qkv' 
                 target_layer = pl_model
                 for part in layer_name.split('.'):
                     target_layer = getattr(target_layer, part)
