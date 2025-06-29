@@ -12,6 +12,8 @@ import pandas as pd
 import torch
 import yaml
 
+from sklearn.model_selection import train_test_split
+
 # --- DataSet factory based on configilm / BENv2 ---
 from torch.utils.data import ConcatDataset, DataLoader, Subset
 
@@ -31,14 +33,33 @@ from baseline import (
 # -------------------------------------------------------------------------
 
 
-def sample_subset(dataset, n, seed):
-    """Return a Subset of size min(n, len(dataset))."""
+def sample_stratified_subset(dataset, n, seed):
+    """Return a stratified Subset of size min(n, len(dataset)) maintaining class proportions."""
     if n >= len(dataset):
-        return dataset  # keep the whole set
-    g = torch.Generator().manual_seed(seed)  # reproducible
-    idx = torch.randperm(len(dataset), generator=g)[:n]
-
-    return Subset(dataset, idx.tolist())
+        return dataset
+    
+    # Get all labels
+    labels = []
+    for i in range(len(dataset)):
+        _, label = dataset[i]
+        labels.append(label)
+    
+    indices = list(range(len(dataset)))
+    try:
+        selected_indices, _ = train_test_split(
+            indices, 
+            train_size=n, 
+            stratify=labels, 
+            random_state=seed
+        )
+    except ValueError:  # Fall back to random if stratification fails
+        g = torch.Generator().manual_seed(seed)
+        selected_indices = torch.randperm(len(dataset), generator=g)[:n].tolist()
+        logging.warning(
+            "Stratified sampling failed, falling back to random sampling."
+        )
+   
+    return Subset(dataset, selected_indices)
 
 
 # -------------------------------------------------------------------------
@@ -143,8 +164,8 @@ def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
         train_subset_size = max(1, int(len(train_set) * subset_fraction))
         val_subset_size = max(1, int(len(val_set) * subset_fraction))
 
-        train_subsets.append(sample_subset(train_set, train_subset_size, seed + i))
-        val_subsets.append(sample_subset(val_set, val_subset_size, seed + i))
+        train_subsets.append(sample_stratified_subset(train_set, train_subset_size, seed + i))
+        val_subsets.append(sample_stratified_subset(val_set, val_subset_size, seed + i))
 
         log.info(
             f"Task {i + 1} subset sizes: train={train_subset_size}/{len(train_set)}, "
