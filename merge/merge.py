@@ -11,6 +11,7 @@ import joblib
 import pandas as pd
 import torch
 import yaml
+import math
 
 from sklearn.model_selection import train_test_split
 
@@ -143,160 +144,206 @@ def load_weights_for_permutation(countries, permutation, base_path: str = None):
     
     return all_lora_weights, all_classifier_weights
 
+# -------------------------------------------------------------------------
+#  Merging dispatcher
+# -------------------------------------------------------------------------
 
-
-
+def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
+    """
+    Dispatcher function to call the appropriate merging strategy.
+    """
+    # Determine which merging approach to use based on config or params
+    merging_approach = params.get("merging_approach", "from_scratch")
+    
+    if merging_approach == "continual":
+        return test_continual_merging(test_type, params)
+    elif merging_approach == "from_scratch":
+        return test_merging_from_scratch(test_type, params)
+    else:
+        raise ValueError(f"Unknown merging_approach: {merging_approach}. Use 'continual' or 'from_scratch'")
 
 # -------------------------------------------------------------------------
 #  MERGING FUNCTIONS
 # -------------------------------------------------------------------------
 
-
 def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
     """
+    Continual merging: sequentially merge models one task at a time.
+    Only difference from from_scratch: merge previous + new, then update previous.
     """
-   logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.INFO)
     log = logging.getLogger(__name__)
 
     countries = params["countries"]
     permutation = params["permutation"]
-    train_samples = params.get("train_samples")
-    test_samples = params.get("test_samples")
+    subset_fraction = params.get("subset_fraction", 0.1)
     seed = params.get("seed", 0)
     batch_size = params.get("batch_size", 16)
     num_workers = params.get("num_workers", 4)
-    epoch = params.get("epoch", 15)
+    epoch = params.get("epoch", 1)
     lr = float(params.get("lr", 1e-4))
-    model_module = params.get("model_module")  # Extract model_module from params
+    model_module = params.get("model_module")
 
-    # Load datasets
-    train_sets, val_sets = get_datasets(
+    # Load datasets (same as from_scratch)
+    full_train_sets, full_val_sets = get_datasets(
         countries,
         permutation,
         split="train",
         include_snowy=params.get("include_snowy", False),
         include_cloudy=params.get("include_cloudy", False),
-        samples_per_country=train_samples,
+        samples_per_country=params.get("train_samples"),
         seed=seed,
         frac=0.9,
-        model_module=model_module,  # Pass model_module explicitly
+        model_module=model_module,
     )
+
     test_sets, _ = get_datasets(
         countries,
         permutation,
         split="test",
         include_snowy=params.get("include_snowy", False),
         include_cloudy=params.get("include_cloudy", False),
-        samples_per_country=test_samples,
+        samples_per_country=params.get("test_samples"),
         seed=seed,
         frac=1,
-        model_module=model_module,  # Pass model_module explicitly
+        model_module=model_module,
     )
 
-    save_dir = params.get('save_dir')
-    if save_dir: os.makedirs(save_dir, exist_ok=True)
+    # Create stratified subsets (same as from_scratch)
+    train_subsets = []
+    val_subsets = []
+    for i, (train_set, val_set) in enumerate(zip(full_train_sets, full_val_sets)):
+        train_subset_size = max(1, int(len(train_set) * subset_fraction))
+        val_subset_size = max(1, int(len(val_set) * subset_fraction))
 
-    # Load model
-    if model_module == "SoftCon":
-        model = load_model(r=4)  # load old model
+        train_subsets.append(sample_stratified_subset(train_set, train_subset_size, seed + i))
+        val_subsets.append(sample_stratified_subset(val_set, val_subset_size, seed + i))
 
-        pl_model = SpectralGPTLightningModule(
-            model, embed_dim=768, num_classes=19, lr=lr
-        )
+    save_dir = params.get("save_dir")
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
 
-    elif model_module == "SpectralGPT":
-        model = load_model(r=4)  # load old model
-
-        pl_model = SpectralGPTLightningModule(
-            model, num_classes=19, lr=lr
-        )
-
+    # Load base model (same as from_scratch)
+    if model_module == "SpectralGPT":
+        base_model = load_model(r=4, use_lora=False)
+    elif model_module == "SoftCon":
+        base_model = load_model(r=4, use_lora=False)
     else:
         raise ValueError(f"Unknown model_module: {model_module}")
 
-    # Get first Model weights
-    # TODO load weigts for first task
-    lora_old = load_lora(1)
+    # Pre-load all weights (same as from_scratch)
+    all_lora_weights, all_classifier_weights = load_weights_for_permutation(
+        countries, permutation, params.get("weight_base_path")
+    )
 
-    # -------------------------------------------------------------------------
-    #  Continual-learning loop with bounded replay memory
-    # -------------------------------------------------------------------------
+    # Initialize with first task
+    previous_lora_weights = [all_lora_weights[0]]
+    previous_classifier_weights = [all_classifier_weights[0]]
+
     results = []
-    memory_size = params.get("memory_size")  # total budget for old data
-    replay_train_sets, replay_val_sets = [], []  # what actually goes into replay
 
-    for step in range(2, len(permutation) + 1):
-        seen_idx = permutation[:step]
-        seen_countries = [countries[i] for i in seen_idx]
-        log.info(f"Step {step}: Countries {seen_countries}")
+    # Continual merging loop: start at task 2
+    for current_task in range(2, len(permutation) + 1):
+        seen_task_indices = permutation[:current_task]
+        seen_countries = [countries[i] for i in seen_task_indices]
+        log.info(f"Task {current_task}: Adding {countries[permutation[current_task-1]]} to previous merged model")
 
-        # ---------------------------------------------------------------------
-        #  Decide how many samples of *each* old task we may keep
-        # ---------------------------------------------------------------------
-        if step == 2:  # only one old task so far
-            share = memory_size
+        # Get new task weights
+        new_lora_weights = all_lora_weights[current_task-1]
+        new_classifier_weights = all_classifier_weights[current_task-1]
+
+        # Create training data for just the new task (for training the merged classifier)
+        new_train_loader = DataLoader(
+            train_subsets[current_task-1], 
+            batch_size=batch_size, 
+            shuffle=True, 
+            num_workers=num_workers
+        )
+        new_val_loader = DataLoader(
+            val_subsets[current_task-1], 
+            batch_size=batch_size, 
+            shuffle=False, 
+            num_workers=num_workers
+        )
+
+        # Create LightningModule
+        if model_module == "SpectralGPT":
+            pl_model = SpectralGPTLightningModule(base_model, num_classes=19, lr=lr)
+        elif model_module == "SoftCon":
+            pl_model = SpectralGPTLightningModule(base_model, embed_dim=768, num_classes=19, lr=lr)
         else:
-            share = math.ceil(memory_size / (step - 1))  # equal share per old task
+            raise ValueError(f"Unknown model_module: {model_module}")
 
-        # Build replay sets for ALL old tasks (step-1 of them)
-        replay_train_sets.clear()
-        replay_val_sets.clear()
-        for t in range(step - 1):
-            replay_train_sets.append(sample_subset(train_sets[t], share, seed))
-            replay_val_sets.append(sample_subset(val_sets[t], share, seed))
-
-        # New (current) task gets *all* its data
-        train_current = train_sets[step - 1]
-        val_current = val_sets[step - 1]
-
-        # ---------------------------------------------------------------------
-        #  Create loaders
-        # ---------------------------------------------------------------------
-        concat_train_old = ConcatDataset(replay_train_sets)
-        concat_val_old = ConcatDataset(replay_val_sets)
-        train_loader_old = DataLoader(
-            concat_train_old, batch_size=batch_size, shuffle=True, num_workers=num_workers
-        )
-        val_loader_old = DataLoader(
-            concat_val_old, batch_size=batch_size, shuffle=False, num_workers=num_workers
-        )
-
-        train_loader_new = DataLoader(
-            train_current, batch_size=batch_size, shuffle=True, num_workers=num_workers
-        )
-        val_loader_new = DataLoader(
-            val_current, batch_size=batch_size, shuffle=False, num_workers=num_workers
-        )
-
-        # TODO we need to load the new lora weights
-        lora_new = load_lora(step)
-
-        # TODO here we call the merging methods
-        # Merge
+        # Merge: previous + new
         start_merge = time.time()
-        if test_type=="ZipLoRA":
-            from ziplora import ZipLoRaMerge
-            pl_model, lora_old = ZipLoRaMerge(pl_model,lora_old,lora_new,train_loader_old,train_loader_new,val_loader_old,val_loader_new,step,params)
+
         if test_type == "LoRASoups":
-            pl_model = LoRASoupsMerge()
-        if test_type == "LoRAHub":
-            pl_model = LoRAHubMerge()
+            from LoRASoups import LoRASoupsMerge
+
+            # Merge previous merged weights with new task weights
+            lora_heads_to_merge = previous_lora_weights + [new_lora_weights]
+            classifier_heads_to_merge = previous_classifier_weights + [new_classifier_weights]
+
+            merged_model, merged_lora, merged_classifier = LoRASoupsMerge(
+                pl_model=pl_model,
+                train_loader=new_train_loader,  # Train on new task data
+                val_loader=new_val_loader,
+                lora_heads=lora_heads_to_merge,
+                classifier_heads=classifier_heads_to_merge,
+                mode='learnable',
+                num_epochs=epoch,
+                lr=lr
+            )
+
+            # Update previous to be the merged result (this is the key difference!)
+            previous_lora_weights = [merged_lora]
+            previous_classifier_weights = [merged_classifier]
+
+        elif test_type == "ZipLoRA":
+            # Similar pattern for ZipLoRA
+            pass
+        elif test_type == "LoRAHub":
+            # Similar pattern for LoRAHub
+            pass
         else:
             raise ValueError(f"Unknown test_type: {test_type}")
 
         merge_time = time.time() - start_merge
-        log.info(f"Merge time: {merge_time:.2f}s")
+        log.info(f"Merge time for task {current_task}: {merge_time:.2f}s")
 
-        # Save model
+        # Save merged model
         if save_dir:
-            path = os.path.join(save_dir, f"step{step}-{'-'.join(seen_countries)}.pkl")
-            joblib.dump(pl_model, path)
-            log.info(f"Model saved: {path}")
+            path = os.path.join(
+                save_dir, f"continual_task{current_task}-{'-'.join(seen_countries)}.pkl"
+            )
+            joblib.dump(
+                {
+                    "model": merged_model,
+                    "lora_weights": merged_lora,
+                    "classifier_weights": merged_classifier,
+                },
+                path,
+            )
+            log.info(f"Continual merged model saved: {path}")
 
-        # Eval on all seen
+        # Evaluation (same as from_scratch)
         eval_metrics: Dict[str, float] = {}
         start_eval = time.time()
-        for idx in seen_idx:
+
+        # Create combined test set for all seen tasks
+        combined_test_sets = [test_sets[i] for i in seen_task_indices]
+        combined_test = ConcatDataset(combined_test_sets)
+        combined_test_loader = DataLoader(
+            combined_test, batch_size=batch_size, shuffle=False, num_workers=num_workers
+        )
+
+        # Evaluate on combined test set
+        combined_metrics = eval_model(merged_model, combined_test_loader)
+        for name, val in combined_metrics.items():
+            eval_metrics[f"combined_{name}"] = val
+
+        # Also evaluate on individual country test sets
+        for idx in seen_task_indices:
             country = countries[idx]
             test_loader = DataLoader(
                 test_sets[idx],
@@ -304,31 +351,37 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
                 shuffle=False,
                 num_workers=num_workers,
             )
-            m = eval_model(pl_model, test_loader)
-
-            for name, val in m.items():
+            country_metrics = eval_model(merged_model, test_loader)
+            for name, val in country_metrics.items():
                 eval_metrics[f"{country}_{name}"] = val
-        eval_time = time.time() - start_eval
-        log.info(f"Evaluation time: {eval_time:.2f}s")
 
-        # Mean metrics
+        eval_time = time.time() - start_eval
+        log.info(f"Evaluation time for task {current_task}: {eval_time:.2f}s")
+
+        # Calculate mean metrics (same as from_scratch)
         sums, counts = defaultdict(float), defaultdict(int)
         for k, v in eval_metrics.items():
-            _, met = k.split("_", 1)
-            sums[met] += v
-            counts[met] += 1
+            if not k.startswith("combined_"):
+                _, met = k.split("_", 1)
+                sums[met] += v
+                counts[met] += 1
         mean_metrics = {f"mean_{m}": sums[m] / counts[m] for m in sums}
 
         row = {
-            "step": step,
+            "task": current_task,
             "countries": tuple(seen_countries),
-            "train_time_s": merge_time,
+            "merge_time_s": merge_time,
             "eval_time_s": eval_time,
+            "num_tasks_merged": len(seen_task_indices),
         }
         row.update(eval_metrics)
         row.update(mean_metrics)
         results.append(row)
-        log.info(f"Result: {row}")
+
+        log.info(
+            f"Task {current_task} completed. Combined test accuracy: "
+            f"{eval_metrics.get('combined_accuracy', 'N/A')}"
+        )
 
     return pd.DataFrame(results)
 
