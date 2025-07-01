@@ -143,12 +143,200 @@ def load_weights_for_permutation(countries, permutation, base_path: str = None):
     
     return all_lora_weights, all_classifier_weights
 
+
+
+
+
 # -------------------------------------------------------------------------
 #  MERGING FUNCTIONS
 # -------------------------------------------------------------------------
 
 
-def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
+def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
+    """
+    """
+   logging.basicConfig(level=logging.INFO)
+    log = logging.getLogger(__name__)
+
+    countries = params["countries"]
+    permutation = params["permutation"]
+    train_samples = params.get("train_samples")
+    test_samples = params.get("test_samples")
+    seed = params.get("seed", 0)
+    batch_size = params.get("batch_size", 16)
+    num_workers = params.get("num_workers", 4)
+    epoch = params.get("epoch", 15)
+    lr = float(params.get("lr", 1e-4))
+    model_module = params.get("model_module")  # Extract model_module from params
+
+    # Load datasets
+    train_sets, val_sets = get_datasets(
+        countries,
+        permutation,
+        split="train",
+        include_snowy=params.get("include_snowy", False),
+        include_cloudy=params.get("include_cloudy", False),
+        samples_per_country=train_samples,
+        seed=seed,
+        frac=0.9,
+        model_module=model_module,  # Pass model_module explicitly
+    )
+    test_sets, _ = get_datasets(
+        countries,
+        permutation,
+        split="test",
+        include_snowy=params.get("include_snowy", False),
+        include_cloudy=params.get("include_cloudy", False),
+        samples_per_country=test_samples,
+        seed=seed,
+        frac=1,
+        model_module=model_module,  # Pass model_module explicitly
+    )
+
+    save_dir = params.get('save_dir')
+    if save_dir: os.makedirs(save_dir, exist_ok=True)
+
+    # Load model
+    if model_module == "SoftCon":
+        model = load_model(r=4)  # load old model
+
+        pl_model = SpectralGPTLightningModule(
+            model, embed_dim=768, num_classes=19, lr=lr
+        )
+
+    elif model_module == "SpectralGPT":
+        model = load_model(r=4)  # load old model
+
+        pl_model = SpectralGPTLightningModule(
+            model, num_classes=19, lr=lr
+        )
+
+    else:
+        raise ValueError(f"Unknown model_module: {model_module}")
+
+    # Get first Model weights
+    # TODO load weigts for first task
+    lora_old = load_lora(1)
+
+    # -------------------------------------------------------------------------
+    #  Continual-learning loop with bounded replay memory
+    # -------------------------------------------------------------------------
+    results = []
+    memory_size = params.get("memory_size")  # total budget for old data
+    replay_train_sets, replay_val_sets = [], []  # what actually goes into replay
+
+    for step in range(2, len(permutation) + 1):
+        seen_idx = permutation[:step]
+        seen_countries = [countries[i] for i in seen_idx]
+        log.info(f"Step {step}: Countries {seen_countries}")
+
+        # ---------------------------------------------------------------------
+        #  Decide how many samples of *each* old task we may keep
+        # ---------------------------------------------------------------------
+        if step == 2:  # only one old task so far
+            share = memory_size
+        else:
+            share = math.ceil(memory_size / (step - 1))  # equal share per old task
+
+        # Build replay sets for ALL old tasks (step-1 of them)
+        replay_train_sets.clear()
+        replay_val_sets.clear()
+        for t in range(step - 1):
+            replay_train_sets.append(sample_subset(train_sets[t], share, seed))
+            replay_val_sets.append(sample_subset(val_sets[t], share, seed))
+
+        # New (current) task gets *all* its data
+        train_current = train_sets[step - 1]
+        val_current = val_sets[step - 1]
+
+        # ---------------------------------------------------------------------
+        #  Create loaders
+        # ---------------------------------------------------------------------
+        concat_train_old = ConcatDataset(replay_train_sets)
+        concat_val_old = ConcatDataset(replay_val_sets)
+        train_loader_old = DataLoader(
+            concat_train_old, batch_size=batch_size, shuffle=True, num_workers=num_workers
+        )
+        val_loader_old = DataLoader(
+            concat_val_old, batch_size=batch_size, shuffle=False, num_workers=num_workers
+        )
+
+        train_loader_new = DataLoader(
+            train_current, batch_size=batch_size, shuffle=True, num_workers=num_workers
+        )
+        val_loader_new = DataLoader(
+            val_current, batch_size=batch_size, shuffle=False, num_workers=num_workers
+        )
+
+        # TODO we need to load the new lora weights
+        lora_new = load_lora(step)
+
+        # TODO here we call the merging methods
+        # Merge
+        start_merge = time.time()
+        if test_type=="ZipLoRA":
+            from ziplora import ZipLoRaMerge
+            pl_model, lora_old = ZipLoRaMerge(pl_model,lora_old,lora_new,train_loader_old,train_loader_new,val_loader_old,val_loader_new,step,params)
+        if test_type == "LoRASoups":
+            pl_model = LoRASoupsMerge()
+        if test_type == "LoRAHub":
+            pl_model = LoRAHubMerge()
+        else:
+            raise ValueError(f"Unknown test_type: {test_type}")
+
+        merge_time = time.time() - start_merge
+        log.info(f"Merge time: {merge_time:.2f}s")
+
+        # Save model
+        if save_dir:
+            path = os.path.join(save_dir, f"step{step}-{'-'.join(seen_countries)}.pkl")
+            joblib.dump(pl_model, path)
+            log.info(f"Model saved: {path}")
+
+        # Eval on all seen
+        eval_metrics: Dict[str, float] = {}
+        start_eval = time.time()
+        for idx in seen_idx:
+            country = countries[idx]
+            test_loader = DataLoader(
+                test_sets[idx],
+                batch_size=batch_size,
+                shuffle=False,
+                num_workers=num_workers,
+            )
+            m = eval_model(pl_model, test_loader)
+
+            for name, val in m.items():
+                eval_metrics[f"{country}_{name}"] = val
+        eval_time = time.time() - start_eval
+        log.info(f"Evaluation time: {eval_time:.2f}s")
+
+        # Mean metrics
+        sums, counts = defaultdict(float), defaultdict(int)
+        for k, v in eval_metrics.items():
+            _, met = k.split("_", 1)
+            sums[met] += v
+            counts[met] += 1
+        mean_metrics = {f"mean_{m}": sums[m] / counts[m] for m in sums}
+
+        row = {
+            "step": step,
+            "countries": tuple(seen_countries),
+            "train_time_s": merge_time,
+            "eval_time_s": eval_time,
+        }
+        row.update(eval_metrics)
+        row.update(mean_metrics)
+        results.append(row)
+        log.info(f"Result: {row}")
+
+    return pd.DataFrame(results)
+
+
+# -------------------------------------------------------------------------
+# Can only be run for LoraHub and LoraSoups since it merges more then two tasks 
+# -------------------------------------------------------------------------
+def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame:
     """
     TODO: Expected Behavior (to be tested):
     - load a stratified subset (5 to 10 %) for every orginal task
@@ -250,7 +438,6 @@ def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
         seen_task_indices = permutation[:current_task]
         seen_countries = [countries[i] for i in seen_task_indices]
         log.info(f"Task {current_task}: Merging countries {seen_countries}")
-
         # Pool the task data and create train/validation sets
         pooled_train_sets = [train_subsets[i] for i in seen_task_indices]
         pooled_val_sets = [val_subsets[i] for i in seen_task_indices]
@@ -381,205 +568,39 @@ def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
     return pd.DataFrame(results)
 
 
-# ------------------------------------------------------------------
-# - ANTONS VERSION
-# ------------------------------------------------------------------
-# --- Experiments --
-# def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
-#     """
-#     TODO: Expected Behavior (to be implemented):
-#     - load a stratified subset (5 to 10 %) for every orginal task
-#     - use the base model without wrapping LoRA_vit
-#     - create a LightningModule for the model
-#     - load the LoRA weights for all tasks
-#     - load the classifier weights for all tasks
-#     - for task i in countries:
-#         - start at task 2
-#         - pool the tasks data and create train and validation sets
-#         - merge the classifiers based on sample size by task
-#         - TODO: Handled ExternallyApply: apply specific Merging Strategy:
-#             - merges the LoRA weights of tasks
-#             - gradient based merging: train the classfier in the same process
-#             - LoRAHub: first merge then train the classifier?
-#             - 1 epoch with lr 1e-4
-#             - return the merged model, lora_weights and classifier weights
-#         - Evaluate the merged model on the combined test set of all tasks
-#         - increment to the next task
-#     """
-#     logging.basicConfig(level=logging.INFO)
-#     log = logging.getLogger(__name__)
-
-#     countries = params["countries"]
-#     permutation = params["permutation"]
-#     train_samples = params.get("train_samples")
-#     test_samples = params.get("test_samples")
-#     seed = params.get("seed", 0)
-#     batch_size = params.get("batch_size", 16)
-#     num_workers = params.get("num_workers", 4)
-#     epoch = params.get("epoch", 15)
-#     lr = float(params.get("lr", 1e-4))
-#     model_module = params.get("model_module")  # Extract model_module from params
-
-#     # Load datasets
-#     train_sets, val_sets = get_datasets(
-#         countries,
-#         permutation,
-#         split="train",
-#         include_snowy=params.get("include_snowy", False),
-#         include_cloudy=params.get("include_cloudy", False),
-#         samples_per_country=train_samples,
-#         seed=seed,
-#         frac=0.9,
-#         model_module=model_module,
-#     )
-#     test_sets, _ = get_datasets(
-#         countries,
-#         permutation,
-#         split="test",
-#         include_snowy=params.get("include_snowy", False),
-#         include_cloudy=params.get("include_cloudy", False),
-#         samples_per_country=test_samples,
-#         seed=seed,
-#         frac=1,
-#         model_module=model_module,
-#     )
-
-#     save_dir = params.get('save_dir')
-#     if save_dir: os.makedirs(save_dir, exist_ok=True)
-
-#     # Load model
-#     if model_module == "SoftCon":
-#         model = load_model(r=4)  # load old model
-
-#         pl_model = SpectralGPTLightningModule(
-#             model, embed_dim=768, num_classes=19, lr=lr
-#         )
-
-#     elif model_module == "SpectralGPT":
-#         model = load_model(r=4)  # load old model
-
-#         pl_model = SpectralGPTLightningModule(
-#             model, num_classes=19, lr=lr
-#         )
-
-#     else:
-#         raise ValueError(f"Unknown model_module: {model_module}")
-
-#     # Get first Model weights
-#     # TODO load weigts for first task
-#     lora_old = load_lora(1)
-
-#     # -------------------------------------------------------------------------
-#     #  Continual-learning loop with bounded replay memory
-#     # -------------------------------------------------------------------------
-#     results = []
-#     memory_size = params.get("memory_size")  # total budget for old data
-#     replay_train_sets, replay_val_sets = [], []  # what actually goes into replay
-
-#     for step in range(2, len(permutation) + 1):
-#         seen_idx = permutation[:step]
-#         seen_countries = [countries[i] for i in seen_idx]
-#         log.info(f"Step {step}: Countries {seen_countries}")
-
-#         # ---------------------------------------------------------------------
-#         #  Decide how many samples of *each* old task we may keep
-#         # ---------------------------------------------------------------------
-#         if step == 2:  # only one old task so far
-#             share = memory_size
-#         else:
-#             share = math.ceil(memory_size / (step - 1))  # equal share per old task
-
-#         # Build replay sets for ALL old tasks (step-1 of them)
-#         replay_train_sets.clear()
-#         replay_val_sets.clear()
-#         for t in range(step - 1):
-#             replay_train_sets.append(sample_subset(train_sets[t], share, seed))
-#             replay_val_sets.append(sample_subset(val_sets[t], share, seed))
-
-#         # New (current) task gets *all* its data
-#         train_current = train_sets[step - 1]
-#         val_current = val_sets[step - 1]
-
-#         # ---------------------------------------------------------------------
-#         #  Create loaders
-#         # ---------------------------------------------------------------------
-#         concat_train_old = ConcatDataset(replay_train_sets)
-#         concat_val_old = ConcatDataset(replay_val_sets)
-#         train_loader_old = DataLoader(
-#             concat_train_old, batch_size=batch_size, shuffle=True, num_workers=num_workers
-#         )
-#         val_loader_old = DataLoader(
-#             concat_val_old, batch_size=batch_size, shuffle=False, num_workers=num_workers
-#         )
-
-#         train_loader_new = DataLoader(
-#             train_current, batch_size=batch_size, shuffle=True, num_workers=num_workers
-#         )
-#         val_loader_new = DataLoader(
-#             val_current, batch_size=batch_size, shuffle=False, num_workers=num_workers
-#         )
-
-#         # TODO we need to load the new lora weights
-#         lora_new = load_lora(step)
-#         # TODO we need to load the 2 models correc
-
-
-
-# ---------------------------------------------------------
+# -------------------------------------------------------------------------
 #
-# ---------------------------------------------------------
+# -------------------------------------------------------------------------
+
 
 
 def main_from_config(config_path: str) -> pd.DataFrame:
-    """Load config and run the appropriate test based on test_type."""
     with open(config_path, "r") as f:
         cfg = (
             yaml.safe_load(f)
             if config_path.endswith((".yml", ".yaml"))
             else json.load(f)
         )
-    
     from importlib import import_module
 
     # Dynamically import the specified module
-    model_module_name = cfg.get("model_module", "SpectralGPT")
+    model_module_name = cfg.get(
+        "model_module", "SpectralGPT"
+    )  # Default to 'SpectralGPT'
     logging.info(f"Using model module: {model_module_name}")
-    
-    try:
-        model_module = import_module(model_module_name)
-        # Import everything from the module into the global namespace
-        globals().update(
-            {
-                name: getattr(model_module, name)
-                for name in dir(model_module)
-                if not name.startswith("_")
-            }
-        )
-        
-        # CRITICAL: Make transforms available to baseline.py
-        import baseline
-        if hasattr(model_module, 'train_transform'):
-            baseline.train_transform = model_module.train_transform
-            baseline.val_transform = model_module.val_transform
-            logging.info("Successfully set transforms in baseline module")
-        else:
-            logging.error("train_transform not found in model module")
-            
-    except ImportError as e:
-        logging.error(f"Could not import {model_module_name}: {e}")
-        # Fallback approach
-        try:
-            from SpectralGPT import train_transform, val_transform
-            import baseline
-            baseline.train_transform = train_transform
-            baseline.val_transform = val_transform
-            logging.info("Fallback: Set transforms via direct SpectralGPT import")
-        except ImportError as e2:
-            logging.error(f"Could not import transforms at all: {e2}")
-            raise
+    model_module = import_module(model_module_name)
+
+    # Import everything from the module into the global namespace
+    globals().update(
+        {
+            name: getattr(model_module, name)
+            for name in dir(model_module)
+            if not name.startswith("_")
+        }
+    )
 
     params = cfg["params"]
-    
+
     # Add model_module to params
     params["model_module"] = model_module_name
 
@@ -589,77 +610,28 @@ def main_from_config(config_path: str) -> pd.DataFrame:
         params["metrics_fn"] = getattr(import_module(mod), fn)
 
     test_type = cfg["test_type"]
-    
-    # Handle different test types
-    if test_type in ["LoRASoups", "ZipLoRA", "LoRAHub"]:
-        # New merging test types
-        logging.info(f"Running merging experiment: {test_type}")
-        return test_merging(test_type, params)
-    
-    elif test_type in ["replay", "no_replay", "task_tuning"]:
-        # Original test types
-        model = load_model(4)
-        if test_type == "replay":
-            return test_finetuning_from_scratch(model, params)
-        elif test_type == "no_replay":
-            return test_continual_finetuning(model, params)
-        elif test_type == "task_tuning":
-            return test_task_tuning(model, params)
-    else:
-        raise ValueError(f"Unknown test_type: {test_type}. Supported: LoRASoups, ZipLoRA, LoRAHub, replay, no_replay, task_tuning")
-
+    test_merging(test_type, params)
 
 def setup_logging():
-    """Initialize logging configuration."""
     logging.basicConfig(
-        level=logging.INFO, 
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
     )
     logging.info("Logger initialized")
 
 
 def main():
-    """Main entry point - parse arguments and run experiment."""
-    parser = argparse.ArgumentParser(description="Run continual learning experiments")
-    parser.add_argument("--config", "-c", required=True, help="Path to config file")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", "-c", required=True)
     args = parser.parse_args()
 
     setup_logging()
-    logging.info(f"Starting experiment with config: {args.config}")
+    logging.info(f"Config path: {args.config}")
 
-    # Log the config file contents for debugging
-    try:
-        with open(args.config, "r", encoding="utf-8") as f:
-            config_contents = f.read()
-            logging.info("Config file contents:\n%s", config_contents)
-    except Exception as e:
-        logging.error(f"Could not read config file: {e}")
-        return
+    # ← simple dump of every line in the config into the log
+    with open(args.config, "r", encoding="utf-8") as f:
+        logging.info("Config file contents:\n%s", f.read())
 
-    # Run the experiment
-    try:
-        results_df = main_from_config(args.config)
-        
-        # Save results
-        if results_df is not None and not results_df.empty:
-            output_path = args.config.replace('.yml', '_results.csv').replace('.yaml', '_results.csv')
-            results_df.to_csv(output_path, index=False)
-            logging.info(f"Results saved to: {output_path}")
-            
-            # Print summary
-            print("\n" + "="*60)
-            print("EXPERIMENT RESULTS")
-            print("="*60)
-            print(results_df.to_string(index=False))
-            print("="*60)
-        else:
-            logging.warning("No results returned from experiment")
-            
-    except Exception as e:
-        logging.error(f"Experiment failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return
+    print(main_from_config(args.config))
 
 
 if __name__ == "__main__":
