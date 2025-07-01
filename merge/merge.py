@@ -67,31 +67,76 @@ def sample_stratified_subset(dataset, n, seed):
 # -------------------------------------------------------------------------
 
 
-def load_lora_weights(task_idx: int):
-    """Load LoRA weights for a specific task."""
+def load_lora_weights(country: str, base_path: str = None):
+    """Load LoRA weights for a specific country."""
     try:
         from safetensors.torch import load_file
-
-        lora_path = f"/faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/task_tuning/saved_models/task{task_idx}_Finland_lora.safetensors"
+        
+        if base_path is None:
+            base_path = "/faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/task_tuning/saved_models"
+        
+        lora_path = os.path.join(base_path, f"{country}_lora.safetensors")
+        
         if os.path.exists(lora_path):
+            logging.info(f"Loading LoRA weights from: {lora_path}")
             return load_file(lora_path)
+        else:
+            logging.warning(f"LoRA weights not found: {lora_path}")
+            return None
+            
     except (FileNotFoundError, ImportError) as e:
-        logging.warning(f"Could not load LoRA weights for task {task_idx}: {e}")
+        logging.warning(f"Could not load LoRA weights for {country}: {e}")
         return None
 
 
-def load_classifier_weights(task_idx: int):
-    """Load classifier weights for a specific task."""
+def load_classifier_weights(country: str, base_path: str = None):
+    """Load classifier weights for a specific country."""
     try:
         from safetensors.torch import load_file
-
-        fc_path = f"/faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/task_tuning/saved_models/task{task_idx}_Finland_fc.safetensors"
+        
+        if base_path is None:
+            base_path = "/faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/task_tuning/saved_models"
+        
+        fc_path = os.path.join(base_path, f"{country}_fc.safetensors")
+        
         if os.path.exists(fc_path):
+            logging.info(f"Loading classifier weights from: {fc_path}")
             return load_file(fc_path)
+        else:
+            logging.warning(f"Classifier weights not found: {fc_path}")
+            return None
+            
     except (FileNotFoundError, ImportError) as e:
-        logging.warning(f"Could not load classifier weights for task {task_idx}: {e}")
+        logging.warning(f"Could not load classifier weights for {country}: {e}")
         return None
 
+
+def load_weights_for_permutation(countries, permutation, base_path: str = None):
+    """Load weights for countries according to permutation order."""
+    all_lora_weights = []
+    all_classifier_weights = []
+    
+    # Load weights according to permutation order
+    for country_idx in permutation:
+        if country_idx < len(countries):
+            country = countries[country_idx]
+            
+            logging.info(f"Loading weights for country: {country} (permutation index: {country_idx})")
+            
+            lora_weights = load_lora_weights(country, base_path)
+            classifier_weights = load_classifier_weights(country, base_path)
+            
+            if lora_weights is not None:
+                all_lora_weights.append(lora_weights)
+            else:
+                logging.warning(f"No LoRA weights found for {country}")
+                
+            if classifier_weights is not None:
+                all_classifier_weights.append(classifier_weights)
+            else:
+                logging.warning(f"No classifier weights found for {country}")
+    
+    return all_lora_weights, all_classifier_weights
 
 # -------------------------------------------------------------------------
 #  MERGING FUNCTIONS
@@ -506,159 +551,4 @@ def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
 
 #         # TODO we need to load the new lora weights
 #         lora_new = load_lora(step)
-#         # TODO we need to load the 2 models correctly
-#         # Reinitialize the trainer for each step
-#         trainer = create_trainer(params)
-#         if model_module == "SoftCon":
-#             model_old = load_model(r=4)  # load old model
-#             model_new = load_model(r=4)  # load new model
-
-#             pl_model_old = SoftConLightningModule(
-#                 base_model, num_classes=19, lr=lr
-#             )
-#             pl_model_new = SoftConLightningModule(
-#                 base_model, num_classes=19, lr=lr
-#             )
-
-#         elif model_module == "SpectralGPT":
-#             model_old= load_model(r=4) #load old model
-#             model_new = load_model(r=4) # load new model
-
-#             pl_model_old = SpectralGPTLightningModule(
-#                 model_old, num_classes=19, lr=lr
-#             )
-#             pl_model_new = SpectralGPTLightningModule(
-#                 model_new, num_classes=19, lr=lr
-#             )
-#         else:
-#             raise ValueError(f"Unknown model_module: {model_module}")
-
-#         # TODO here we call the merging methods
-#         # Merge
-#         start_merge = time.time()
-#         if test_type=="ZipLoRA":
-#             from ziplora import ZipLoRaMerge
-#             pl_model, lora_old = ZipLoRaMerge(pl_model,lora_old,lora_new,train_loader_old,train_loader_new,val_loader_old,val_loader_new,step,params)
-#         if test_type == "LoRASoups":
-#             pl_model = LoRASoupsMerge()
-#         if test_type == "LoRAHub":
-#             pl_model = LoRAHubMerge()
-#         else:
-#             raise ValueError(f"Unknown test_type: {test_type}")
-
-#         merge_time = time.time() - start_merge
-#         log.info(f"Merge time: {merge_time:.2f}s")
-
-#         # Save model
-#         if save_dir:
-#             path = os.path.join(save_dir, f"step{step}-{'-'.join(seen_countries)}.pkl")
-#             joblib.dump(pl_model, path)
-#             log.info(f"Model saved: {path}")
-
-#         # Eval on all seen
-#         eval_metrics: Dict[str, float] = {}
-#         start_eval = time.time()
-#         for idx in seen_idx:
-#             country = countries[idx]
-#             test_loader = DataLoader(
-#                 test_sets[idx],
-#                 batch_size=batch_size,
-#                 shuffle=False,
-#                 num_workers=num_workers,
-#             )
-#             m = eval_model(pl_model, test_loader)
-
-#             for name, val in m.items():
-#                 eval_metrics[f"{country}_{name}"] = val
-#         eval_time = time.time() - start_eval
-#         log.info(f"Evaluation time: {eval_time:.2f}s")
-
-#         # Mean metrics
-#         sums, counts = defaultdict(float), defaultdict(int)
-#         for k, v in eval_metrics.items():
-#             _, met = k.split("_", 1)
-#             sums[met] += v
-#             counts[met] += 1
-#         mean_metrics = {f"mean_{m}": sums[m] / counts[m] for m in sums}
-
-#         row = {
-#             "step": step,
-#             "countries": tuple(seen_countries),
-#             "train_time_s": merge_time,
-#             "eval_time_s": eval_time,
-#         }
-#         row.update(eval_metrics)
-#         row.update(mean_metrics)
-#         results.append(row)
-#         log.info(f"Result: {row}")
-
-#     return pd.DataFrame(results)
-
-# ------------------------------------------------------------------
-#
-# ------------------------------------------------------------------
-
-
-def main_from_config(config_path: str) -> pd.DataFrame:
-    with open(config_path, "r") as f:
-        cfg = (
-            yaml.safe_load(f)
-            if config_path.endswith((".yml", ".yaml"))
-            else json.load(f)
-        )
-    from importlib import import_module
-
-    # Dynamically import the specified module
-    model_module_name = cfg.get(
-        "model_module", "SpectralGPT"
-    )  # Default to 'SpectralGPT'
-    logging.info(f"Using model module: {model_module_name}")
-    model_module = import_module(model_module_name)
-
-    # Import everything from the module into the global namespace
-    globals().update(
-        {
-            name: getattr(model_module, name)
-            for name in dir(model_module)
-            if not name.startswith("_")
-        }
-    )
-
-    params = cfg["params"]
-
-    # Add model_module to params
-    params["model_module"] = model_module_name
-
-    # Dynamically set metrics function if specified
-    if isinstance(params.get("metrics_fn"), str):
-        mod, fn = params["metrics_fn"].rsplit(":", 1)
-        params["metrics_fn"] = getattr(import_module(mod), fn)
-
-    test_type = cfg["test_type"]
-    test_merging(test_type, params)
-
-
-def setup_logging():
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
-    )
-    logging.info("Logger initialized")
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", "-c", required=True)
-    args = parser.parse_args()
-
-    setup_logging()
-    logging.info(f"Config path: {args.config}")
-
-    # ← simple dump of every line in the config into the log
-    with open(args.config, "r", encoding="utf-8") as f:
-        logging.info("Config file contents:\n%s", f.read())
-
-    print(main_from_config(args.config))
-
-
-if __name__ == "__main__":
-    main()
+#         # TODO we need to load the 2 models correc
