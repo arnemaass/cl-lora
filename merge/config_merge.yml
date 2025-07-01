@@ -8,6 +8,7 @@ model_module: SpectralGPT  # Options: 'SpectralGPT' or 'SoftCon'
 
 # Parameter für die Tests
 params:
+  merging_approach: continual  # Merging approach: 'continual' or 'from_scratch'
   countries:
     - Finland
     - Ireland
@@ -19,8 +20,8 @@ params:
   subset_fraction: 0.1                         # Required by merge.py for creating subsets
 
   # Anzahl der zufällig gezogenen Samples pro Land
-  train_samples: 5 #22482
-  test_samples: 1 #8176
+  train_samples: 500 #22482
+  test_samples: 100 #8176
   seed: 42                              # Seed für Reproduzierbarkeit
 
   # DataLoader-Parameter

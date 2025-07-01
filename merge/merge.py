@@ -145,24 +145,6 @@ def load_weights_for_permutation(countries, permutation, base_path: str = None):
     return all_lora_weights, all_classifier_weights
 
 # -------------------------------------------------------------------------
-#  Merging dispatcher
-# -------------------------------------------------------------------------
-
-def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
-    """
-    Dispatcher function to call the appropriate merging strategy.
-    """
-    # Determine which merging approach to use based on config or params
-    merging_approach = params.get("merging_approach", "from_scratch")
-    
-    if merging_approach == "continual":
-        return test_continual_merging(test_type, params)
-    elif merging_approach == "from_scratch":
-        return test_merging_from_scratch(test_type, params)
-    else:
-        raise ValueError(f"Unknown merging_approach: {merging_approach}. Use 'continual' or 'from_scratch'")
-
-# -------------------------------------------------------------------------
 #  MERGING FUNCTIONS
 # -------------------------------------------------------------------------
 
@@ -626,7 +608,6 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
 # -------------------------------------------------------------------------
 
 
-
 def main_from_config(config_path: str) -> pd.DataFrame:
     with open(config_path, "r") as f:
         cfg = (
@@ -634,27 +615,34 @@ def main_from_config(config_path: str) -> pd.DataFrame:
             if config_path.endswith((".yml", ".yaml"))
             else json.load(f)
         )
+    
     from importlib import import_module
 
     # Dynamically import the specified module
-    model_module_name = cfg.get(
-        "model_module", "SpectralGPT"
-    )  # Default to 'SpectralGPT'
+    model_module_name = cfg.get("model_module", "SpectralGPT")
     logging.info(f"Using model module: {model_module_name}")
-    model_module = import_module(model_module_name)
-
-    # Import everything from the module into the global namespace
-    globals().update(
-        {
-            name: getattr(model_module, name)
-            for name in dir(model_module)
-            if not name.startswith("_")
-        }
-    )
+    
+    try:
+        model_module = import_module(model_module_name)
+        
+        # Import everything from the module into the global namespace
+        for name in dir(model_module):
+            if not name.startswith("_"):
+                globals()[name] = getattr(model_module, name)
+        
+        # Also make transforms available for baseline imports
+        if hasattr(model_module, 'train_transform'):
+            import builtins
+            builtins.train_transform = model_module.train_transform
+            builtins.val_transform = model_module.val_transform
+            
+        logging.info(f"Successfully imported {model_module_name} module")
+        
+    except ImportError as e:
+        logging.error(f"Failed to import {model_module_name}: {e}")
+        raise
 
     params = cfg["params"]
-
-    # Add model_module to params
     params["model_module"] = model_module_name
 
     # Dynamically set metrics function if specified
@@ -663,7 +651,26 @@ def main_from_config(config_path: str) -> pd.DataFrame:
         params["metrics_fn"] = getattr(import_module(mod), fn)
 
     test_type = cfg["test_type"]
-    test_merging(test_type, params)
+    return test_merging(test_type, params)  # Add return statement
+
+
+#  Merging dispatcher
+def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
+    """
+    Dispatcher function to call the appropriate merging strategy.
+    """
+    # Determine which merging approach to use based on config or params
+    merging_approach = params.get("merging_approach", "from_scratch")
+    
+    if merging_approach == "continual":
+        return test_continual_merging(test_type, params)
+    elif merging_approach == "from_scratch":
+        return test_merging_from_scratch(test_type, params)
+    else:
+        raise ValueError(f"Unknown merging_approach: {merging_approach}. Use 'continual' or 'from_scratch'")
+
+
+
 
 def setup_logging():
     logging.basicConfig(

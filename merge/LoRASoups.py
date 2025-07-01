@@ -82,7 +82,7 @@ def LoRASoupsMerge(pl_model, train_loader, val_loader, lora_heads, classifier_he
             for layer_idx in layer_indices
         }
     
-    # 4. Merge LoRA weights and apply to base model
+    # 4. Instead of applying directly to model, store the merged weights
     merged_lora_weights = {}
     
     for layer_idx in layer_indices:
@@ -128,26 +128,16 @@ def LoRASoupsMerge(pl_model, train_loader, val_loader, lora_heads, classifier_he
             # This implements: W_delta = B[B1;B2] @ alpha @ A[A1;A2]'
             lora_update = B_concat @ alpha_block @ A_concat  # Shape: [out_features, in_features]
             
-            # Store merged weights
+            # Store merged weights WITHOUT applying to model yet
             merged_lora_weights[layer_idx] = {
                 'w_a': A_concat,
-                'w_b': B_concat,
+                'w_b': B_concat, 
                 'alpha_block': alpha_block,
-                'update': lora_update
+                'lora_update': lora_update  # Store the computed update
             }
-            # TODO 
-            # Apply LoRA update to the corresponding layer in the base model
-            try:
-                layer_name = f'blocks.{layer_idx}.attn.qkv' 
-                target_layer = pl_model
-                for part in layer_name.split('.'):
-                    target_layer = getattr(target_layer, part)
-                
-                if hasattr(target_layer, 'weight'):
-                    target_layer.weight.data += lora_update
-            except AttributeError:
-                print(f"Could not find layer {layer_name} in model")
-                continue
+            
+            # Apply LoRA update to model - but make this optional/safer
+            apply_lora_to_model(pl_model, layer_idx, lora_update)
     
     # 5. Merge classifier heads
     merged_classifier = {}
@@ -234,6 +224,37 @@ def LoRASoupsMerge(pl_model, train_loader, val_loader, lora_heads, classifier_he
     
     # 8. Return merged model, LoRA weights, and classifier weights
     return pl_model, merged_lora_weights, merged_classifier
+
+def apply_lora_to_model(pl_model, layer_idx, lora_update): # TODO to be edited
+    """Safely apply LoRA update to model layer."""
+    # Try multiple possible layer naming conventions
+    possible_names = [
+        f'blocks.{layer_idx}.attn.qkv',
+        f'model.blocks.{layer_idx}.attn.qkv', 
+        f'backbone.blocks.{layer_idx}.attn.qkv',
+        f'encoder.layer.{layer_idx}.attention.self.query',  # For BERT-like models
+    ]
+    
+    for layer_name in possible_names:
+        try:
+            target_layer = pl_model
+            for part in layer_name.split('.'):
+                target_layer = getattr(target_layer, part)
+            
+            if hasattr(target_layer, 'weight'):
+                # Instead of += which accumulates, set the new weight
+                if not hasattr(target_layer, '_original_weight'):
+                    target_layer._original_weight = target_layer.weight.data.clone()
+                
+                target_layer.weight.data = target_layer._original_weight + lora_update
+                print(f"Successfully applied LoRA update to {layer_name}")
+                return True
+                
+        except AttributeError:
+            continue
+    
+    print(f"Warning: Could not find suitable layer for index {layer_idx}")
+    return False
 
 
 class AlphaMerger(nn.Module):
