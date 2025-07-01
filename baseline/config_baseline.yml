@@ -31,6 +31,6 @@ params:
   include_cloudy: false
 
 
-  save_dir: /faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/saved_models                # Verzeichnis zum Speichern der Modelle
+  save_dir: /faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/task_tuning/saved_models              # Verzeichnis zum Speichern der Modelle
   log_every_step: true
 
