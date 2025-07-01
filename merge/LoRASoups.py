@@ -5,7 +5,7 @@ from safetensors.torch import load_file
 
 
 
-def LoRASoupsMerge(pl_model, train_loader, val_loader, lora_head1, lora_head2, fc_head1, fc_head2, mode = 'learnable'):
+def LoRASoupsMerge(pl_model, train_loader, val_loader, lora_heads, classifier_heads, mode='learnable', num_epochs=1, lr=1e-4):
     '''
     Apply LoraSoups by merging LoRA weights from multiple models.
 
