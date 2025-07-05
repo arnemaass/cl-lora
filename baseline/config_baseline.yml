@@ -30,7 +30,9 @@ params:
   include_snowy: false
   include_cloudy: false
 
+  # LoRA rank parameter
+  r: 16  # Default rank for LoRA
 
-  save_dir: /faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/task_tuning/saved_models              # Verzeichnis zum Speichern der Modelle
+  save_dir: /faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/task_tuning/saved_models/rank16              # Verzeichnis zum Speichern der Modelle
   log_every_step: true
 

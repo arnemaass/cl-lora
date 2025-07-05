@@ -274,11 +274,11 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
         trainer = create_trainer(params)
         if model_module == "SoftCon":
             # Reload the base model weights
-            base_model = load_model(r=4)  # Load base model with pretrained weights
+            base_model = load_model(r = params["r"])  # Load base model with pretrained weights
             pl_model = SoftConLightningModule(base_model, num_classes=19, lr=lr)
         elif model_module == "SpectralGPT":
             # Reload the base model weights
-            base_model = load_model(r=4)
+            base_model = load_model(r = params["r"])
             pl_model = SpectralGPTLightningModule(base_model, num_classes=19, lr=lr)
         else:
             raise ValueError(f"Unknown model_module: {model_module}")
@@ -572,10 +572,10 @@ def test_task_tuning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
 
         # Load fresh base model for each task
         if model_module == "SoftCon":
-            base_model = load_model(r=4)  # Load base model with pretrained weights
+            base_model = load_model(r = params["r"])  # Load base model with pretrained weights
             pl_model = SoftConLightningModule(base_model, num_classes=19, lr=lr)
         elif model_module == "SpectralGPT":
-            base_model = load_model(r=4)
+            base_model = load_model(r = params["r"])
             pl_model = SpectralGPTLightningModule(base_model, num_classes=19, lr=lr)
         else:
             raise ValueError(f"Unknown model_module: {model_module}")
@@ -688,6 +688,10 @@ def main_from_config(config_path: str) -> pd.DataFrame:
 
     params = cfg["params"]
 
+    # Dynamically update save_dir based on permutation
+    permutation = params["permutation"]
+    permutation_str = "_".join(map(str, permutation))
+    params["save_dir"] = os.path.join(params["save_dir"], f"permutation_{permutation_str}")
     # Add model_module to params
     params["model_module"] = model_module_name
 
@@ -697,7 +701,7 @@ def main_from_config(config_path: str) -> pd.DataFrame:
         params["metrics_fn"] = getattr(import_module(mod), fn)
 
     test_type = cfg["test_type"]
-    model = load_model(4)
+    model = load_model(r=params["r"])  # Pass params to load_model
     if test_type == "replay":
         return test_finetuning_from_scratch(model, params)
     elif test_type == "no_replay":

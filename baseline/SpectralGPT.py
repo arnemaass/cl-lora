@@ -77,10 +77,14 @@ def load_mae_encoder(model, ckpt_path):
     return model
 
 
-def load_model(r=4, use_lora=True):
-    # --- Model setup ---
+def load_model(params: Dict[str, Any], use_lora: bool = True):
+    """
+    Load the model with the specified LoRA rank (r) and other parameters.
+    """
+    r = params.get("r", 4)  # Default to 4 if not specified in the config
 
-    # load pretrained weights
+    # --- Model setup ---
+    # Load pretrained weights
     model = vit_base_patch8_128(sep_pos_embed=True, num_classes=19)
     model = load_mae_encoder(model, dir_pretrained)
 
@@ -89,8 +93,7 @@ def load_model(r=4, use_lora=True):
         f"ViT trainable parameters w/o LoRA: {num_params}"
     )  # trainable parameters: 86859496
 
-    if use_lora:  # This is the cleanest way
-        # Wrap with LoRA
+    if use_lora:  # Wrap with LoRA
         from model.lora_vit import LoRA_SViT
 
         lora_model = LoRA_SViT(model, r=r, alpha=16, num_classes=19)

@@ -11,6 +11,7 @@ params:
   num_workers: 4
   epoch: 20
   lr: 1e-4
+  r: 4
   include_snowy: false
   include_cloudy: false
   save_dir: /faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/task_tuning/saved_models                # Verzeichnis zum Speichern der Modelle
