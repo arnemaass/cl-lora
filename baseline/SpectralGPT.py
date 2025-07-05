@@ -8,6 +8,7 @@ import torch.nn as nn
 from sklearn.exceptions import UndefinedMetricWarning
 from sklearn.metrics import average_precision_score
 from torchvision import transforms
+from typing import Dict, Any
 
 # at the top of your script/notebook
 warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
@@ -77,12 +78,10 @@ def load_mae_encoder(model, ckpt_path):
     return model
 
 
-def load_model(params: Dict[str, Any], use_lora: bool = True):
+def load_model(r = 4, use_lora: bool = True):
     """
     Load the model with the specified LoRA rank (r) and other parameters.
     """
-    r = params.get("r", 4)  # Default to 4 if not specified in the config
-
     # --- Model setup ---
     # Load pretrained weights
     model = vit_base_patch8_128(sep_pos_embed=True, num_classes=19)
