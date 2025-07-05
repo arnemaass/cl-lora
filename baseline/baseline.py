@@ -195,6 +195,7 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
     num_workers = params.get("num_workers", 4)
     epoch = params.get("epoch", 15)
     lr = float(params.get("lr", 1e-4))
+    rank = params.get("r", 4)  # Default rank for LoRA
     model_module = params.get("model_module")  # Extract model_module from params
 
     # Load datasets
@@ -274,11 +275,11 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
         trainer = create_trainer(params)
         if model_module == "SoftCon":
             # Reload the base model weights
-            base_model = load_model(r = params["r"])  # Load base model with pretrained weights
+            base_model = load_model(r=rank) # Load base model with pretrained weights
             pl_model = SoftConLightningModule(base_model, num_classes=19, lr=lr)
         elif model_module == "SpectralGPT":
             # Reload the base model weights
-            base_model = load_model(r = params["r"])
+            base_model = load_model(r=rank)
             pl_model = SpectralGPTLightningModule(base_model, num_classes=19, lr=lr)
         else:
             raise ValueError(f"Unknown model_module: {model_module}")
@@ -373,6 +374,7 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
     num_workers = params.get("num_workers", 4)
     epoch = params.get("epoch", 15)
     lr = float(params.get("lr", 1e-4))
+    rank = params.get("r", 4)  # Default rank for LoRA
     model_module = params.get("model_module")  # Extract model_module from params
 
     save_dir = params.get("save_dir")
@@ -572,10 +574,10 @@ def test_task_tuning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
 
         # Load fresh base model for each task
         if model_module == "SoftCon":
-            base_model = load_model(r = params["r"])  # Load base model with pretrained weights
+            base_model = load_model(r=rank)  # Load base model with pretrained weights
             pl_model = SoftConLightningModule(base_model, num_classes=19, lr=lr)
         elif model_module == "SpectralGPT":
-            base_model = load_model(r = params["r"])
+            base_model = load_model(r=rank)
             pl_model = SpectralGPTLightningModule(base_model, num_classes=19, lr=lr)
         else:
             raise ValueError(f"Unknown model_module: {model_module}")
@@ -687,11 +689,12 @@ def main_from_config(config_path: str) -> pd.DataFrame:
     )
 
     params = cfg["params"]
+    test_type = cfg["test_type"]
 
     # Dynamically update save_dir based on permutation
     permutation = params["permutation"]
     permutation_str = "_".join(map(str, permutation))
-    params["save_dir"] = os.path.join(params["save_dir"], f"permutation_{permutation_str}")
+    params["save_dir"] = os.path.join(params["save_dir"], test_type , f"permutation_{permutation_str}")
     # Add model_module to params
     params["model_module"] = model_module_name
 
@@ -700,8 +703,7 @@ def main_from_config(config_path: str) -> pd.DataFrame:
         mod, fn = params["metrics_fn"].rsplit(":", 1)
         params["metrics_fn"] = getattr(import_module(mod), fn)
 
-    test_type = cfg["test_type"]
-    model = load_model(r=params["r"])  # Pass params to load_model
+    model = load_model(r=params.get("r", 4))  # Pass params to load_model
     if test_type == "replay":
         return test_finetuning_from_scratch(model, params)
     elif test_type == "no_replay":
