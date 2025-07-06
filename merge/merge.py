@@ -247,6 +247,13 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
             shuffle=False, 
             num_workers=num_workers
         )
+        old_train_loader = DataLoader(
+            ConcatDataset(train_subsets[:current_task-1]),
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=num_workers
+        )
+
 
         # Create LightningModule
         if model_module == "SpectralGPT":
@@ -282,8 +289,28 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
             previous_classifier_weights = [merged_classifier]
 
         elif test_type == "ZipLoRA":
-            # Similar pattern for ZipLoRA
-            pass
+            from ziplora import ZipLoRaMerge
+
+            # Merge previous merged weights with new task weights
+            lora_heads_to_merge = previous_lora_weights + [new_lora_weights]
+            classifier_heads_to_merge = previous_classifier_weights + [new_classifier_weights]
+
+            merged_model, merged_lora, merged_classifier = ZipLoRaMerge(
+                pl_model=pl_model,
+                train_loader_new=new_train_loader,  # Train on new task data
+                train_loader_old=old_train_loader,
+                lora_heads=lora_heads_to_merge,
+                classifier_heads=classifier_heads_to_merge,
+                step=current_task,
+                num_epochs=epoch,
+                lr=lr
+            )
+
+            # Update previous to be the merged result (this is the key difference!)
+            previous_lora_weights = [merged_lora]
+            previous_classifier_weights = [merged_classifier]
+
+
         elif test_type == "LoRAHub":
             # Similar pattern for LoRAHub
             pass
@@ -364,6 +391,8 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
             f"Task {current_task} completed. Combined test accuracy: "
             f"{eval_metrics.get('combined_accuracy', 'N/A')}"
         )
+        log.info(f"Result: {row}")
+
 
     return pd.DataFrame(results)
 
