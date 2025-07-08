@@ -1,0 +1,404 @@
+2025-07-07 11:55:51,044 INFO Logger initialized
+2025-07-07 11:55:51,045 INFO Config path: config_baseline2.yml
+2025-07-07 11:55:51,045 INFO Config file contents:
+# Aktualisierte Konfigurationsdatei für Continual-Learning-Benchmark
+
+# Test-Typ: 'replay' oder 'no_replay'
+test_type: replay
+
+# Modell-Definition
+model_module: SpectralGPT  # Options: 'SpectralGPT' or 'SoftCon'
+
+# Parameter für die Tests
+params:
+  countries:
+    - Finland
+    - Ireland
+    - Serbia
+    - Portugal
+  permutation: [2, 0, 3, 1]                # Reihenfolge der Länder-Indices
+
+  # Anzahl der zufällig gezogenen Samples pro Land
+  train_samples: 5000 #22482
+  test_samples: 500 #8176
+  seed: 42                              # Seed für Reproduzierbarkeit
+
+  # DataLoader-Parameter
+  batch_size: 16
+  num_workers: 4
+  epoch: 20
+  lr: 1e-4
+
+  # Bildgröße und Filteroptionen
+  include_snowy: false
+  include_cloudy: false
+
+  # LoRA rank parameter
+  r: 4  # Default rank for LoRA
+
+  save_dir: /faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/saved_models              # Verzeichnis zum Speichern der Modelle
+  log_every_step: true
+
+
+2025-07-07 11:55:51,047 INFO Using model module: SpectralGPT
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/timm/models/layers/__init__.py:48: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+2025-07-07 11:55:51,185 INFO Save directory set to: /faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/saved_models/replay/permutation_2_0_3_1
+img_size (128, 128) patch_size (8, 8) frames 12 t_patch_size 3
+Embedding size of ckpt: 768
+Number of patches of model: 1024
+Number of extra tokens of model: -768
+Original size of ckpt: 12
+New size of model: 16
+Position interpolate from 12x12 to 16x16
+Loaded with: <All keys matched successfully>
+ViT trainable parameters w/o LoRA: 85403904
+LoRA_SViT(
+  (lora_vit): VisionTransformer(
+    (patch_embed): PatchEmbed(
+      (proj): Conv3d(1, 768, kernel_size=(3, 8, 8), stride=(3, 8, 8))
+    )
+    (blocks): ModuleList(
+      (0): Block(
+        (norm1): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (attn): Attention(
+          (q): _LoRALayer(
+            (w): Linear(in_features=768, out_features=768, bias=True)
+            (w_a): Linear(in_features=768, out_features=4, bias=False)
+            (w_b): Linear(in_features=4, out_features=768, bias=False)
+          )
+          (k): Linear(in_features=768, out_features=768, bias=True)
+          (v): _LoRALayer(
+            (w): Linear(in_features=768, out_features=768, bias=True)
+            (w_a): Linear(in_features=768, out_features=4, bias=False)
+            (w_b): Linear(in_features=4, out_features=768, bias=False)
+          )
+          (proj): Linear(in_features=768, out_features=768, bias=True)
+          (proj_drop): Dropout(p=0.0, inplace=False)
+        )
+        (drop_path): Identity()
+        (norm2): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (mlp): Mlp(
+          (fc1): Linear(in_features=768, out_features=3072, bias=True)
+          (act): GELU(approximate='none')
+          (drop1): Dropout(p=0.0, inplace=False)
+          (norm): Identity()
+          (fc2): Linear(in_features=3072, out_features=768, bias=True)
+          (drop2): Dropout(p=0.0, inplace=False)
+        )
+      )
+      (1): Block(
+        (norm1): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (attn): Attention(
+          (q): _LoRALayer(
+            (w): Linear(in_features=768, out_features=768, bias=True)
+            (w_a): Linear(in_features=768, out_features=4, bias=False)
+            (w_b): Linear(in_features=4, out_features=768, bias=False)
+          )
+          (k): Linear(in_features=768, out_features=768, bias=True)
+          (v): _LoRALayer(
+            (w): Linear(in_features=768, out_features=768, bias=True)
+            (w_a): Linear(in_features=768, out_features=4, bias=False)
+            (w_b): Linear(in_features=4, out_features=768, bias=False)
+          )
+          (proj): Linear(in_features=768, out_features=768, bias=True)
+          (proj_drop): Dropout(p=0.0, inplace=False)
+        )
+        (drop_path): DropPath(drop_prob=0.018)
+        (norm2): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (mlp): Mlp(
+          (fc1): Linear(in_features=768, out_features=3072, bias=True)
+          (act): GELU(approximate='none')
+          (drop1): Dropout(p=0.0, inplace=False)
+          (norm): Identity()
+          (fc2): Linear(in_features=3072, out_features=768, bias=True)
+          (drop2): Dropout(p=0.0, inplace=False)
+        )
+      )
+      (2): Block(
+        (norm1): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (attn): Attention(
+          (q): _LoRALayer(
+            (w): Linear(in_features=768, out_features=768, bias=True)
+            (w_a): Linear(in_features=768, out_features=4, bias=False)
+            (w_b): Linear(in_features=4, out_features=768, bias=False)
+          )
+          (k): Linear(in_features=768, out_features=768, bias=True)
+          (v): _LoRALayer(
+            (w): Linear(in_features=768, out_features=768, bias=True)
+            (w_a): Linear(in_features=768, out_features=4, bias=False)
+            (w_b): Linear(in_features=4, out_features=768, bias=False)
+          )
+          (proj): Linear(in_features=768, out_features=768, bias=True)
+          (proj_drop): Dropout(p=0.0, inplace=False)
+        )
+        (drop_path): DropPath(drop_prob=0.036)
+        (norm2): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (mlp): Mlp(
+          (fc1): Linear(in_features=768, out_features=3072, bias=True)
+          (act): GELU(approximate='none')
+          (drop1): Dropout(p=0.0, inplace=False)
+          (norm): Identity()
+          (fc2): Linear(in_features=3072, out_features=768, bias=True)
+          (drop2): Dropout(p=0.0, inplace=False)
+        )
+      )
+      (3): Block(
+        (norm1): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (attn): Attention(
+          (q): _LoRALayer(
+            (w): Linear(in_features=768, out_features=768, bias=True)
+            (w_a): Linear(in_features=768, out_features=4, bias=False)
+            (w_b): Linear(in_features=4, out_features=768, bias=False)
+          )
+          (k): Linear(in_features=768, out_features=768, bias=True)
+          (v): _LoRALayer(
+            (w): Linear(in_features=768, out_features=768, bias=True)
+            (w_a): Linear(in_features=768, out_features=4, bias=False)
+            (w_b): Linear(in_features=4, out_features=768, bias=False)
+          )
+          (proj): Linear(in_features=768, out_features=768, bias=True)
+          (proj_drop): Dropout(p=0.0, inplace=False)
+        )
+        (drop_path): DropPath(drop_prob=0.055)
+        (norm2): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (mlp): Mlp(
+          (fc1): Linear(in_features=768, out_features=3072, bias=True)
+          (act): GELU(approximate='none')
+          (drop1): Dropout(p=0.0, inplace=False)
+          (norm): Identity()
+          (fc2): Linear(in_features=3072, out_features=768, bias=True)
+          (drop2): Dropout(p=0.0, inplace=False)
+        )
+      )
+      (4): Block(
+        (norm1): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (attn): Attention(
+          (q): _LoRALayer(
+            (w): Linear(in_features=768, out_features=768, bias=True)
+            (w_a): Linear(in_features=768, out_features=4, bias=False)
+            (w_b): Linear(in_features=4, out_features=768, bias=False)
+          )
+          (k): Linear(in_features=768, out_features=768, bias=True)
+          (v): _LoRALayer(
+            (w): Linear(in_features=768, out_features=768, bias=True)
+            (w_a): Linear(in_features=768, out_features=4, bias=False)
+            (w_b): Linear(in_features=4, out_features=768, bias=False)
+          )
+          (proj): Linear(in_features=768, out_features=768, bias=True)
+          (proj_drop): Dropout(p=0.0, inplace=False)
+        )
+        (drop_path): DropPath(drop_prob=0.073)
+        (norm2): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (mlp): Mlp(
+          (fc1): Linear(in_features=768, out_features=3072, bias=True)
+          (act): GELU(approximate='none')
+          (drop1): Dropout(p=0.0, inplace=False)
+          (norm): Identity()
+          (fc2): Linear(in_features=3072, out_features=768, bias=True)
+          (drop2): Dropout(p=0.0, inplace=False)
+        )
+      )
+      (5): Block(
+        (norm1): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (attn): Attention(
+          (q): _LoRALayer(
+            (w): Linear(in_features=768, out_features=768, bias=True)
+            (w_a): Linear(in_features=768, out_features=4, bias=False)
+            (w_b): Linear(in_features=4, out_features=768, bias=False)
+          )
+          (k): Linear(in_features=768, out_features=768, bias=True)
+          (v): _LoRALayer(
+            (w): Linear(in_features=768, out_features=768, bias=True)
+            (w_a): Linear(in_features=768, out_features=4, bias=False)
+            (w_b): Linear(in_features=4, out_features=768, bias=False)
+          )
+          (proj): Linear(in_features=768, out_features=768, bias=True)
+          (proj_drop): Dropout(p=0.0, inplace=False)
+        )
+        (drop_path): DropPath(drop_prob=0.091)
+        (norm2): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (mlp): Mlp(
+          (fc1): Linear(in_features=768, out_features=3072, bias=True)
+          (act): GELU(approximate='none')
+          (drop1): Dropout(p=0.0, inplace=False)
+          (norm): Identity()
+          (fc2): Linear(in_features=3072, out_features=768, bias=True)
+          (drop2): Dropout(p=0.0, inplace=False)
+        )
+      )
+      (6): Block(
+        (norm1): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (attn): Attention(
+          (q): _LoRALayer(
+            (w): Linear(in_features=768, out_features=768, bias=True)
+            (w_a): Linear(in_features=768, out_features=4, bias=False)
+            (w_b): Linear(in_features=4, out_features=768, bias=False)
+          )
+          (k): Linear(in_features=768, out_features=768, bias=True)
+          (v): _LoRALayer(
+            (w): Linear(in_features=768, out_features=768, bias=True)
+            (w_a): Linear(in_features=768, out_features=4, bias=False)
+            (w_b): Linear(in_features=4, out_features=768, bias=False)
+          )
+          (proj): Linear(in_features=768, out_features=768, bias=True)
+          (proj_drop): Dropout(p=0.0, inplace=False)
+        )
+        (drop_path): DropPath(drop_prob=0.109)
+        (norm2): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (mlp): Mlp(
+          (fc1): Linear(in_features=768, out_features=3072, bias=True)
+          (act): GELU(approximate='none')
+          (drop1): Dropout(p=0.0, inplace=False)
+          (norm): Identity()
+          (fc2): Linear(in_features=3072, out_features=768, bias=True)
+          (drop2): Dropout(p=0.0, inplace=False)
+        )
+      )
+      (7): Block(
+        (norm1): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (attn): Attention(
+          (q): _LoRALayer(
+            (w): Linear(in_features=768, out_features=768, bias=True)
+            (w_a): Linear(in_features=768, out_features=4, bias=False)
+            (w_b): Linear(in_features=4, out_features=768, bias=False)
+          )
+          (k): Linear(in_features=768, out_features=768, bias=True)
+          (v): _LoRALayer(
+            (w): Linear(in_features=768, out_features=768, bias=True)
+            (w_a): Linear(in_features=768, out_features=4, bias=False)
+            (w_b): Linear(in_features=4, out_features=768, bias=False)
+          )
+          (proj): Linear(in_features=768, out_features=768, bias=True)
+          (proj_drop): Dropout(p=0.0, inplace=False)
+        )
+        (drop_path): DropPath(drop_prob=0.127)
+        (norm2): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (mlp): Mlp(
+          (fc1): Linear(in_features=768, out_features=3072, bias=True)
+          (act): GELU(approximate='none')
+          (drop1): Dropout(p=0.0, inplace=False)
+          (norm): Identity()
+          (fc2): Linear(in_features=3072, out_features=768, bias=True)
+          (drop2): Dropout(p=0.0, inplace=False)
+        )
+      )
+      (8): Block(
+        (norm1): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (attn): Attention(
+          (q): _LoRALayer(
+            (w): Linear(in_features=768, out_features=768, bias=True)
+            (w_a): Linear(in_features=768, out_features=4, bias=False)
+            (w_b): Linear(in_features=4, out_features=768, bias=False)
+          )
+          (k): Linear(in_features=768, out_features=768, bias=True)
+          (v): _LoRALayer(
+            (w): Linear(in_features=768, out_features=768, bias=True)
+            (w_a): Linear(in_features=768, out_features=4, bias=False)
+            (w_b): Linear(in_features=4, out_features=768, bias=False)
+          )
+          (proj): Linear(in_features=768, out_features=768, bias=True)
+          (proj_drop): Dropout(p=0.0, inplace=False)
+        )
+        (drop_path): DropPath(drop_prob=0.145)
+        (norm2): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (mlp): Mlp(
+          (fc1): Linear(in_features=768, out_features=3072, bias=True)
+          (act): GELU(approximate='none')
+          (drop1): Dropout(p=0.0, inplace=False)
+          (norm): Identity()
+          (fc2): Linear(in_features=3072, out_features=768, bias=True)
+          (drop2): Dropout(p=0.0, inplace=False)
+        )
+      )
+      (9): Block(
+        (norm1): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (attn): Attention(
+          (q): _LoRALayer(
+            (w): Linear(in_features=768, out_features=768, bias=True)
+            (w_a): Linear(in_features=768, out_features=4, bias=False)
+            (w_b): Linear(in_features=4, out_features=768, bias=False)
+          )
+          (k): Linear(in_features=768, out_features=768, bias=True)
+          (v): _LoRALayer(
+            (w): Linear(in_features=768, out_features=768, bias=True)
+            (w_a): Linear(in_features=768, out_features=4, bias=False)
+            (w_b): Linear(in_features=4, out_features=768, bias=False)
+          )
+          (proj): Linear(in_features=768, out_features=768, bias=True)
+          (proj_drop): Dropout(p=0.0, inplace=False)
+        )
+        (drop_path): DropPath(drop_prob=0.164)
+        (norm2): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (mlp): Mlp(
+          (fc1): Linear(in_features=768, out_features=3072, bias=True)
+          (act): GELU(approximate='none')
+          (drop1): Dropout(p=0.0, inplace=False)
+          (norm): Identity()
+          (fc2): Linear(in_features=3072, out_features=768, bias=True)
+          (drop2): Dropout(p=0.0, inplace=False)
+        )
+      )
+      (10): Block(
+        (norm1): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (attn): Attention(
+          (q): _LoRALayer(
+            (w): Linear(in_features=768, out_features=768, bias=True)
+            (w_a): Linear(in_features=768, out_features=4, bias=False)
+            (w_b): Linear(in_features=4, out_features=768, bias=False)
+          )
+          (k): Linear(in_features=768, out_features=768, bias=True)
+          (v): _LoRALayer(
+            (w): Linear(in_features=768, out_features=768, bias=True)
+            (w_a): Linear(in_features=768, out_features=4, bias=False)
+            (w_b): Linear(in_features=4, out_features=768, bias=False)
+          )
+          (proj): Linear(in_features=768, out_features=768, bias=True)
+          (proj_drop): Dropout(p=0.0, inplace=False)
+        )
+        (drop_path): DropPath(drop_prob=0.182)
+        (norm2): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (mlp): Mlp(
+          (fc1): Linear(in_features=768, out_features=3072, bias=True)
+          (act): GELU(approximate='none')
+          (drop1): Dropout(p=0.0, inplace=False)
+          (norm): Identity()
+          (fc2): Linear(in_features=3072, out_features=768, bias=True)
+          (drop2): Dropout(p=0.0, inplace=False)
+        )
+      )
+      (11): Block(
+        (norm1): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (attn): Attention(
+          (q): _LoRALayer(
+            (w): Linear(in_features=768, out_features=768, bias=True)
+            (w_a): Linear(in_features=768, out_features=4, bias=False)
+            (w_b): Linear(in_features=4, out_features=768, bias=False)
+          )
+          (k): Linear(in_features=768, out_features=768, bias=True)
+          (v): _LoRALayer(
+            (w): Linear(in_features=768, out_features=768, bias=True)
+            (w_a): Linear(in_features=768, out_features=4, bias=False)
+            (w_b): Linear(in_features=4, out_features=768, bias=False)
+          )
+          (proj): Linear(in_features=768, out_features=768, bias=True)
+          (proj_drop): Dropout(p=0.0, inplace=False)
+        )
+        (drop_path): DropPath(drop_prob=0.200)
+        (norm2): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (mlp): Mlp(
+          (fc1): Linear(in_features=768, out_features=3072, bias=True)
+          (act): GELU(approximate='none')
+          (drop1): Dropout(p=0.0, inplace=False)
+          (norm): Identity()
+          (fc2): Linear(in_features=3072, out_features=768, bias=True)
+          (drop2): Dropout(p=0.0, inplace=False)
+        )
+      )
+    )
+    (norm): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+    (dropout): Dropout(p=0, inplace=False)
+    (fc): Linear(in_features=768, out_features=19, bias=True)
+  )
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+slurmstepd: error: *** STEP 9833.0 ON erde CANCELLED AT 2025-07-07T11:56:48 ***
