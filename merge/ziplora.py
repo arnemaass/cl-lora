@@ -109,21 +109,47 @@ from typing import List, Dict, Iterable, Optional
 class _ZipParam(nn.Module):
     def __init__(self, A_list, B_list, init=0.5):
         """
-        A_list, B_list : list[Tensor]  (one per LoRA head)
-        A : [H, r, d] , B : [H, o, r] , merger m : [H, d]
+        A_list: list of [r_i × d] tensors
+        B_list: list of [o   × r_i] tensors
+        We zero-pad each (A_i,B_i) so all r_i → r_max, then stack.
         """
         super().__init__()
-        self.register_buffer("A", torch.stack(A_list))   # [H,r,d]
-        self.register_buffer("B", torch.stack(B_list))   # [H,o,r]
-        H, d = len(A_list), A_list[0].shape[1]
+
+        # find the maximum rank across heads
+        r_list = [A.shape[0] for A in A_list]
+        r_max = max(r_list)
+        A_padded = []
+        B_padded = []
+
+        # pad each head up to r_max
+        for A, B in zip(A_list, B_list):
+            r_i, d = A.shape      # A is [r_i, d]
+            o, _  = B.shape       # B is [o, r_i]
+            if r_i < r_max:
+                pad   = r_max - r_i
+                # pad A on dim0 (rows) up to r_max
+                A = F.pad(A, (0, 0, 0, pad))     # → [r_max, d]
+                # pad B on dim1 (cols) up to r_max
+                B = F.pad(B, (0, pad, 0, 0))     # → [o, r_max]
+            A_padded.append(A)
+            B_padded.append(B)
+
+        # now all A_padded[i] have shape [r_max, d], andB_padded[i] [o, r_max]
+        self.register_buffer("A", torch.stack(A_padded))  # [H, r_max, d]
+        self.register_buffer("B", torch.stack(B_padded))  # [H, o, r_max]
+
+        H, _, d = self.A.shape
+        # one learnable merger vector per head, length d
         self.m = nn.Parameter(torch.full((H, d), init))
 
     def forward(self, W):
-        # delta = Σ_h  B_h @ (A_h ⊙ m_h)
-        A_scaled = self.A * self.m.unsqueeze(1)          # [H,r,d]
+        # scale and merge:
+        #   A_scaled[h] = A[h] ⊙ m[h]  → [H, r_max, d]
+        A_scaled = self.A * self.m.unsqueeze(1)
+        # per-head delta:  B[h] @ A_scaled[h]  → [H, o, d]
+        # sum heads → delta [o, d]
         delta = torch.einsum("hor,hrd->hod", self.B, A_scaled).sum(0)
         return W + delta
-
 # ───────────────────────────────────────────────────────────────────
 # 1.  main API
 # ───────────────────────────────────────────────────────────────────
@@ -303,6 +329,57 @@ def ZipLoRaMerge(
         _run(train_loader_old,train_loader_new)
         print(f"[ZipLoRaMerge] epoch {ep+1}/{num_epochs}  patched={len(patched)} linears")
 
+    # ------------------------------------------------------------------
+    #  Build merged_lora: one (A_tot, B_tot) + dense delta per layer
+    # ------------------------------------------------------------------
+    merged_lora = {}
+    for lid, zp in zip(layer_ids, zip_params):
+        with torch.no_grad():
+            # shapes
+            H, r, d = zp.A.shape  # [H, r, d]
+            o = zp.B.shape[1]  # zp.B is [H, o, r]
+
+            # 1) original scaled heads → Δ_ref ∈ ℝ^{o×d}
+            A_scaled = zp.A * zp.m.unsqueeze(1)  # [H, r, d]
+            delta_ref = torch.einsum("hor,hrd->hod", zp.B, A_scaled).sum(0)
+
+            # 2) flatten into one big LoRA
+            A_tot = A_scaled.reshape(H * r, d)  # [H·r, d]
+            B_tot = zp.B.permute(1, 0, 2).reshape(o, H * r)  # [o, H·r]
+
+            # 3) reconstruct
+            delta_recon = B_tot @ A_tot  # [o, d]
+
+        # 4) sanity check
+        if not torch.allclose(delta_recon, delta_ref, atol=1e-6):
+            raise RuntimeError(f"reconstruction mismatch in layer {lid}")
+
+        # store everything
+        #merged_lora[f"delta_{lid}"] = delta.cpu()
+        merged_lora[f"w_a_{lid}"]    = A_tot.cpu()
+        merged_lora[f"w_b_{lid}"]    = B_tot.cpu()
+
+    # ------------------------------------------------------------------
+    #  Return the merged model + all the LoRA outputs
+    # ------------------------------------------------------------------
+    # 1) Grab the classifier module (if it exists)
+    classifier_mod = getattr(pl_model, "classifier", None)
+
+    # 2) Build merged_classifier as a dict
+    merged_classifier = {}
+    if isinstance(classifier_mod, nn.Linear):
+        # extract weight [out_feats, in_feats]
+        W = classifier_mod.weight.detach().cpu()
+        out_feats, in_feats = W.shape
+
+        # build key 'fc_{in}in_{out}out'
+        key = f"fc_{in_feats}in_{out_feats}out"
+
+        # insert into dict
+        merged_classifier[key] = W
+    return pl_model, merged_lora, merged_classifier
+
+"""
     merged_lora = {}
     for lid, zp in zip(layer_ids, zip_params):
         # compute ΔW = B @ (A ⊙ m)   for this layer
@@ -315,4 +392,5 @@ def ZipLoRaMerge(
     merged_classifier = getattr(pl_model, "classifier", None)
 
     # 3️⃣  Return all three objects in the same order LoRASoupsMerge does
-    return pl_model, merged_lora, merged_classifier
+  return pl_model, merged_lora, merged_classifier
+"""
