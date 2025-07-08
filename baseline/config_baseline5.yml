@@ -13,7 +13,7 @@ params:
     - Ireland
     - Serbia
     - Portugal
-  permutation: [0, 1, 2, 3]                # Reihenfolge der Länder-Indices
+  permutation: [3, 2, 1, 0]               # Reihenfolge der Länder-Indices
 
   # Anzahl der zufällig gezogenen Samples pro Land
   train_samples: 5000 #22482

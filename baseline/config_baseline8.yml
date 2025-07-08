@@ -1,7 +1,7 @@
 # Aktualisierte Konfigurationsdatei für Continual-Learning-Benchmark
 
 # Test-Typ: 'replay' oder 'no_replay'
-test_type: no_replay
+test_type: replay
 
 # Modell-Definition
 model_module: SpectralGPT  # Options: 'SpectralGPT' or 'SoftCon'
@@ -13,7 +13,7 @@ params:
     - Ireland
     - Serbia
     - Portugal
-  permutation: [0, 1, 2, 3]                # Reihenfolge der Länder-Indices
+  permutation: [0, 1, 2, 3]               # Reihenfolge der Länder-Indices
 
   # Anzahl der zufällig gezogenen Samples pro Land
   train_samples: 5000 #22482
@@ -31,8 +31,8 @@ params:
   include_cloudy: false
 
   # LoRA rank parameter
-  r: 4  # Default rank for LoRA
+  r: 8  # Default rank for LoRA
 
-  save_dir: /faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/saved_models/epoch15            # Verzeichnis zum Speichern der Modelle
+  save_dir: /faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/saved_models/epoch15/rank8            # Verzeichnis zum Speichern der Modelle
   log_every_step: true
 

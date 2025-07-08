@@ -12,6 +12,7 @@
 # cd /home/anton/src/cl-lora/baseline
 cd /home/arne/src/baseline
 
+
 # 2) Logs-Ordner anlegen
 mkdir -p log
 
@@ -27,4 +28,4 @@ LOGFILE=log/pytorch_job_${TIMESTAMP}.log
 
 
 # 4) Skript starten
-srun $PYTHON baseline.py --config config_baseline.yml 2>&1 | tee "$LOGFILE"
+srun $PYTHON baseline.py --config config_baseline6.yml 2>&1 | tee "$LOGFILE"
