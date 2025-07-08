@@ -5,8 +5,8 @@ set -euo pipefail
 # if not, activate it however you normally would
 
 # 1) cd into your repo
-cd /home/arne/src/merge  # Fixed: changed from anton to arne
-#cd /home/arne/src/baseline
+#cd /home/arne/src/merge  # Fixed: changed from anton to arne
+cd /home/anton/src/cl-lora/merge
 
 # 2) make sure the log folder exists
 mkdir -p log
