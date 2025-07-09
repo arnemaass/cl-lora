@@ -316,10 +316,10 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
         # Eval on all seen
         eval_metrics: Dict[str, float] = {}
         start_eval = time.time()
-        for idx in seen_idx:
+        for pos, idx in enumerate(seen_idx):
             country = countries[idx]
             test_loader = DataLoader(
-                test_sets[idx],
+                test_sets[pos],
                 batch_size=batch_size,
                 shuffle=False,
                 num_workers=num_workers,
@@ -474,10 +474,10 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
         # Eval all seen
         eval_metrics = {}
         start_eval = time.time()
-        for idx in seen_idx:
+        for pos, idx in enumerate(seen_idx):
             country = countries[idx]
             test_loader = DataLoader(
-                test_sets[idx],
+                test_sets[pos],
                 batch_size=batch_size,
                 shuffle=False,
                 num_workers=num_workers,
@@ -533,6 +533,7 @@ def test_task_tuning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
     num_workers = params.get("num_workers", 4)
     epoch = params.get("epoch", 15)
     lr = float(params.get("lr", 1e-4))
+    rank = params.get("r", 4)  # Default rank for LoRA
     model_module = params.get("model_module")  # Extract model_module from params
 
     save_dir = params.get("save_dir")
