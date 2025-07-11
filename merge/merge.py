@@ -79,7 +79,7 @@ def load_lora_weights(country: str, base_path: str = None):
         from safetensors.torch import load_file
         
         if base_path is None:
-            base_path = "/faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/task_tuning/saved_models"
+            base_path = "/faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/saved_models/epoch15/task_tuning"
         
         lora_path = os.path.join(base_path, f"{country}_lora.safetensors")
         
@@ -101,7 +101,7 @@ def load_classifier_weights(country: str, base_path: str = None):
         from safetensors.torch import load_file
         
         if base_path is None:
-            base_path = "/faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/task_tuning/saved_models"
+            base_path = "/faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/saved_models/epoch15/task_tuning"
         
         fc_path = os.path.join(base_path, f"{country}_fc.safetensors")
         
@@ -267,16 +267,16 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
         start_merge = time.time()
 
         if test_type == "LoRASoups":
-            from LoRASoups import LoRASoupsMerge
+            from LoRASoups import LoraSoupsMerge
 
             # Merge previous merged weights with new task weights
             lora_heads_to_merge = previous_lora_weights + [new_lora_weights]
             classifier_heads_to_merge = previous_classifier_weights + [new_classifier_weights]
 
-            merged_model, merged_lora, merged_classifier = LoRASoupsMerge(
+            merged_model, merged_lora, merged_classifier = LoraSoupsMerge(
                 pl_model=pl_model,
-                train_loader=new_train_loader,  # Train on new task data
-                val_loader=new_val_loader,
+                train_loader_new=new_train_loader,  # Train on new task data
+                train_loader_old=old_train_loader,
                 lora_heads=lora_heads_to_merge,
                 classifier_heads=classifier_heads_to_merge,
                 mode='learnable',
@@ -327,9 +327,11 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
             )
             joblib.dump(
                 {
-                    "model": merged_model,
                     "lora_weights": merged_lora,
                     "classifier_weights": merged_classifier,
+                    "task": current_task,
+                    "countries": seen_countries,
+                    "merge_time_s": merge_time,
                 },
                 path,
             )
@@ -533,9 +535,9 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
         current_classifier_weights = all_classifier_weights[:current_task]
 
         if test_type == "LoRASoups":
-            from LoRASoups import LoRASoupsMerge
+            from LoRASoups import LoraSoupsMerge
 
-            merged_model, merged_lora, merged_classifier = LoRASoupsMerge(
+            merged_model, merged_lora, merged_classifier = LoraSoupsMerge(
                 pl_model=pl_model,
                 train_loader=train_loader,
                 val_loader=val_loader,
@@ -564,9 +566,11 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
             )
             joblib.dump(
                 {
-                    "model": merged_model,
                     "lora_weights": merged_lora,
                     "classifier_weights": merged_classifier,
+                    "task": current_task,
+                    "countries": seen_countries,
+                    "merge_time_s": merge_time,
                 },
                 path,
             )
