@@ -110,6 +110,7 @@ def load_classifier_weights(country: str, base_path: str = None):
             return load_file(fc_path)
         else:
             logging.warning(f"Classifier weights not found: {fc_path}")
+            print(f"Classifier weights not found: {fc_path}")
             return None
             
     except (FileNotFoundError, ImportError) as e:
@@ -121,6 +122,8 @@ def load_weights_for_permutation(countries, permutation, base_path: str = None):
     """Load weights for countries according to permutation order."""
     all_lora_weights = []
     all_classifier_weights = []
+    print(permutation)
+    print(countries)
     
     # Load weights according to permutation order
     for country_idx in permutation:
@@ -128,7 +131,7 @@ def load_weights_for_permutation(countries, permutation, base_path: str = None):
             country = countries[country_idx]
             
             logging.info(f"Loading weights for country: {country} (permutation index: {country_idx})")
-            
+            print(f"Loading weights for country: {country} (permutation index: {country_idx})")
             lora_weights = load_lora_weights(country, base_path)
             classifier_weights = load_classifier_weights(country, base_path)
             
@@ -136,6 +139,7 @@ def load_weights_for_permutation(countries, permutation, base_path: str = None):
                 all_lora_weights.append(lora_weights)
             else:
                 logging.warning(f"No LoRA weights found for {country}")
+                print("no weights")
                 
             if classifier_weights is not None:
                 all_classifier_weights.append(classifier_weights)
@@ -143,6 +147,16 @@ def load_weights_for_permutation(countries, permutation, base_path: str = None):
                 logging.warning(f"No classifier weights found for {country}")
     
     return all_lora_weights, all_classifier_weights
+
+def sample_subset(dataset, n, seed):
+    """Return a Subset of size min(n, len(dataset))."""
+    print(dataset)
+    if n >= len(dataset):
+        return dataset  # keep the whole set
+    g = torch.Generator().manual_seed(seed)  # reproducible
+    idx = torch.randperm(len(dataset), generator=g)[: n]
+
+    return Subset(dataset, idx.tolist())
 
 # -------------------------------------------------------------------------
 #  MERGING FUNCTIONS
@@ -195,8 +209,8 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
     train_subsets = []
     val_subsets = []
     for i, (train_set, val_set) in enumerate(zip(full_train_sets, full_val_sets)):
-        train_subset_size = max(1, int(len(train_set) * subset_fraction))
-        val_subset_size = max(1, int(len(val_set) * subset_fraction))
+        train_subset_size = max(1, int(len(train_set)))
+        val_subset_size = max(1, int(len(val_set)))
 
         train_subsets.append(sample_stratified_subset(train_set, train_subset_size, seed + i))
         val_subsets.append(sample_stratified_subset(val_set, val_subset_size, seed + i))
@@ -223,6 +237,9 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
     previous_classifier_weights = [all_classifier_weights[0]]
 
     results = []
+    memory_size = params.get("memory_size")  # total budget for old data
+    replay_train_sets, replay_val_sets = [], []  # what actually goes into replay
+
 
     # Continual merging loop: start at task 2
     for current_task in range(2, len(permutation) + 1):
@@ -230,25 +247,39 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
         seen_countries = [countries[i] for i in seen_task_indices]
         log.info(f"Task {current_task}: Adding {countries[permutation[current_task-1]]} to previous merged model")
 
+        if current_task == 2:  # only one old task so far
+            share = memory_size
+        else:
+            share = math.ceil(memory_size / (current_task - 1))  # equal share per old task
+
+        replay_train_sets.clear()
+        replay_val_sets.clear()
+        for t in range(current_task - 1):
+            replay_train_sets.append(sample_subset(full_train_sets[t], share, seed))
+            replay_val_sets.append(sample_subset(full_val_sets[t], share, seed))
+
+        train_current = full_train_sets[current_task - 1]
+        val_current = full_val_sets[current_task - 1]
+
         # Get new task weights
         new_lora_weights = all_lora_weights[current_task-1]
         new_classifier_weights = all_classifier_weights[current_task-1]
 
         # Create training data for just the new task (for training the merged classifier)
         new_train_loader = DataLoader(
-            train_subsets[current_task-1], 
+            train_current,
             batch_size=batch_size, 
             shuffle=True, 
             num_workers=num_workers
         )
         new_val_loader = DataLoader(
-            val_subsets[current_task-1], 
+            val_current,
             batch_size=batch_size, 
             shuffle=False, 
             num_workers=num_workers
         )
         old_train_loader = DataLoader(
-            ConcatDataset(train_subsets[:current_task-1]),
+            ConcatDataset(replay_train_sets),
             batch_size=batch_size,
             shuffle=True,
             num_workers=num_workers
@@ -283,7 +314,6 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
                 num_epochs=epoch,
                 lr=lr
             )
-
             # Update previous to be the merged result (this is the key difference!)
             previous_lora_weights = [merged_lora]
             previous_classifier_weights = [merged_classifier]
@@ -303,7 +333,8 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
                 classifier_heads=classifier_heads_to_merge,
                 step=current_task,
                 num_epochs=epoch,
-                lr=lr
+                lr=lr,
+                d_cos=1
             )
 
             # Update previous to be the merged result (this is the key difference!)
