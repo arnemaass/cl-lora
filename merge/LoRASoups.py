@@ -102,16 +102,29 @@ def _are_ranks_consistent(lora_heads: List[Dict[str, torch.Tensor]]) -> bool:
     """Checks if all LoRA heads have consistent ranks across all layers."""
     if not lora_heads:
         return True
+
+    # Robustly discover all layer IDs from all heads that have w_a matrices
+    all_w_a_keys = {k for h in lora_heads for k in h if k.startswith("w_a_")}
     
-    layer_ids = sorted({k.split('_')[-1] for k in lora_heads[0] if k.startswith("w_a_")})
-    
+    # If any head lacks w_a keys, we must use delta merging.
+    for i, head in enumerate(lora_heads):
+        if not any(k.startswith("w_a_") for k in head):
+            log.info(f"Head {i} is in delta-only format. Will use delta-based merging.")
+            return False
+
+    layer_ids = sorted({k.split('_')[-1] for k in all_w_a_keys})
+    if not layer_ids:
+        log.info("No w_a/w_b layers found in any head. Assuming delta-based merging is intended.")
+        return False
+
     for lid in layer_ids:
         ranks = []
         for head in lora_heads:
-            if f"w_a_{lid}" in head:
-                ranks.append(head[f"w_a_{lid}"].shape[0])
+            # All heads are guaranteed to have w_a keys at this point
+            ranks.append(head[f"w_a_{lid}"].shape[0])
+        
         if len(set(ranks)) > 1:
-            log.info(f"Inconsistent ranks found for layer {lid}. Will use delta-based merging.")
+            log.info(f"Inconsistent ranks found for layer {lid}: {ranks}. Will use delta-based merging.")
             return False
             
     log.info("All LoRA heads have consistent ranks. Will use Zip-LoRA style merging.")
@@ -231,47 +244,70 @@ def LoraSoupsMerge(
     pl_model.to(device)
     pl_model.train()
 
+    # --- Add model structure printout ---
+    log.info("--- Model Structure ---")
+    log.info(pl_model)
+    log.info("-----------------------")
+
     # 1. Freeze base model and collect trainable parameters
     for p in pl_model.parameters():
         p.requires_grad_(False)
     trainables: List[nn.Parameter] = []
 
-    # 2. Discover layer IDs and check for rank consistency.
-    # --- FIX: Use robust layer ID discovery from all heads and patterns ---
-    layer_ids = sorted(list(set(
-        k.split('_')[-1] 
-        for h in lora_heads for k in h 
-        if k.startswith("w_a_") or k.startswith("delta_")
-    )))
+    # 1) Gather zero-padded IDs from the LoRA keys:
+    # e.g. layer_ids = ["000", "007", "013", ...]
+    layer_ids = sorted({
+        k.split('_')[-1]
+        for k in lora_heads[0]
+        if k.startswith("w_a_")
+    })
+
+    # Fallback for the case where the first head is a delta-only merge result.
+    if not layer_ids and lora_heads:
+        log.warning("Initial layer ID discovery failed (no 'w_a_' keys). "
+                    "Falling back to robust discovery from all heads.")
+        layer_ids = sorted(list(set(
+            k.split('_')[-1]
+            for h in lora_heads for k in h
+            if k.startswith("w_a_") or k.startswith("delta_")
+        )))
+
     log.debug(f"Discovered layer IDs: {layer_ids}")
     ranks_are_consistent = _are_ranks_consistent(lora_heads)
-    
-    # 3. For each layer, compute deltas and attach parametrization using ZipLoRA's proven strategy.
+
+    # 3. For each layer, compute deltas and attach parametrization
     soup_params: List[_LoRaSoupParam] = []
     patched_modules: List[str] = []
-    
-    suffixes = ("q", "k", "v", "proj")
-    
+    # Only target q and v layers as specified
+    suffixes = ("q", "v")
+
+    # 2) For each ID, convert to a “clean” integer string:
     for lid in layer_ids:
         deltas = _compute_deltas_for_layer(lid, lora_heads, device)
         if not deltas:
             log.warning(f"No deltas computed for layer ID {lid}, skipping patch for this layer.")
             continue
-        
+
         parametrization = _LoRaSoupParam(deltas, mode=mode).to(device)
-        
         found_module_for_lid = False
-        clean_id = str(int(lid)) # '007' -> '7'
-        
+        clean_id = str(int(lid))  # "000" → "0", "007" → "7"
+
+        # 3) Look through every submodule:
         for name, mod in pl_model.named_modules():
-            # Match only attention modules (q, k, v, proj) for the specific block
-            if isinstance(mod, nn.Linear) and f".{clean_id}." in name and name.rsplit('.', 1)[-1] in suffixes:
+            # Match only Linear layers *and* ensure the name contains the block ID
+            # e.g. name = "model.blocks.7.attn.q" for ViT structure
+            if (
+                isinstance(mod, nn.Linear)
+                and f".blocks.{clean_id}.attn." in name
+                and name.rsplit('.', 1)[-1] in suffixes
+            ):
                 delta_shape = parametrization.deltas.shape[1:]
                 if mod.weight.shape != delta_shape:
                     log.debug(f"Skipping patch for '{name}': shape mismatch. "
                               f"Weight: {mod.weight.shape}, Delta: {delta_shape}")
                     continue
 
+                # This is one of the LoRA-targeted linears!
                 log.info(f"Patching module '{name}' for layer ID {lid}")
                 parametrize.register_parametrization(mod, "weight", parametrization, unsafe=False)
                 patched_modules.append(name)
@@ -293,14 +329,23 @@ def LoraSoupsMerge(
 
     # 4. Configure classifier head using weighted averaging
     if classifier_heads and len(classifier_heads) >= 2:
-        # Weight by number of tasks (e.g., task 3 is 2/3 old, 1/3 new)
+        # --- FIX: Ensure correct recursive weighting for continual learning ---
+        # In a continual loop, we expect two heads: the previously merged one and the new one.
+        # The weighting should be based on the number of tasks seen so far.
+        if len(classifier_heads) > 2:
+            log.warning(f"Received {len(classifier_heads)} classifier heads. "
+                        "For correct weighting, ensure only the previous merge result and the new head are passed. "
+                        "Using the first as 'old' and the last as 'new'.")
+
+        # Weight by number of tasks (e.g., for task 3, weights are 2/3 for old, 1/3 for new)
         w_old = (current_task - 1) / current_task
         w_new = 1 / current_task
 
-        log.info(f"Classifier merge weights: old={w_old:.3f}, new={w_new:.3f}")
+        log.info(f"Classifier merge weights for task {current_task}: old={w_old:.3f}, new={w_new:.3f}")
 
+        # Use the first head as the accumulated "old" state and the last as the "new" task's head.
         weight_old, bias_old = _split_weight_bias(classifier_heads[0])
-        weight_new, bias_new = _split_weight_bias(classifier_heads[-1]) # Use last for new
+        weight_new, bias_new = _split_weight_bias(classifier_heads[-1])
 
         merged_weight = w_old * weight_old + w_new * weight_new
         merged_bias = None
