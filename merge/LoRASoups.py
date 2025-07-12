@@ -218,10 +218,10 @@ def LoraSoupsMerge(
     current_task: int = 2, # Add current_task parameter
 ) -> Tuple[nn.Module, Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
     """
-    Merges multiple LoRA adapters by learning per-head, per-layer coefficients (α).
+    Merges multiple LoRA adapters by learning per-head, per-layer coefficients (alpha).
 
     This function freezes the base model, attaches learnable parametrizations to each
-    LoRA-targeted linear layer, and trains the α coefficients (and optionally a new
+    LoRA-targeted linear layer, and trains the alpha coefficients (and optionally a new
     classifier head) on a combined dataset.
 
     Args:
@@ -230,7 +230,7 @@ def LoraSoupsMerge(
         train_loader_new (Iterable): DataLoader for the new task data.
         lora_heads (List[Dict[str, torch.Tensor]]): A list of state dicts, one for each LoRA adapter.
         classifier_heads (Optional[List[Dict[str, torch.Tensor]]]): Optional list of classifier state dicts.
-        mode (str): Merging mode. "learnable" for trainable α, "static" for uniform α=1/H.
+        mode (str): Merging mode. "learnable" for trainable alpha, "static" for uniform alpha =1/H.
         num_epochs (int): Number of epochs to train the merging coefficients.
         lr (float): Learning rate for the optimizer.
 
@@ -329,7 +329,7 @@ def LoraSoupsMerge(
 
     # 4. Configure classifier head using weighted averaging
     if classifier_heads and len(classifier_heads) >= 2:
-        # --- FIX: Ensure correct recursive weighting for continual learning ---
+        # --- Ensure correct recursive weighting for continual learning ---
         # In a continual loop, we expect two heads: the previously merged one and the new one.
         # The weighting should be based on the number of tasks seen so far.
         if len(classifier_heads) > 2:
@@ -395,11 +395,11 @@ def LoraSoupsMerge(
     loss_fn = nn.BCEWithLogitsLoss()
 
     for ep in range(num_epochs):
-        # --- FIX: Use zip to automatically handle different dataloader lengths ---
+        # ---  Use zip to automatically handle different dataloader lengths ---
         pbar = tqdm(zip(train_loader_old, train_loader_new),
                     desc=f"Epoch {ep+1}/{num_epochs}", unit="batch")
         for batch_old, batch_new in pbar:
-            # The check for None is no longer needed with zip
+
             x_old, y_old = batch_old
             x_new, y_new = batch_new
             
