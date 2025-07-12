@@ -20,15 +20,15 @@ from torch.utils.data import ConcatDataset, DataLoader, Subset
 
 # Dynamically add the parent directory to sys.path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../baseline")
-
-# Import transforms along with other SpectralGPT components
+# # Import transforms along with other SpectralGPT components
 from SpectralGPT import (
     eval_model,
     load_model,
-    train_transform,  
-    val_transform,    
+    # train_transform,  
+    # val_transform,    
     SpectralGPTLightningModule, 
 )
+
 
 from baseline import (
     get_datasets,
@@ -312,7 +312,8 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
                 classifier_heads=classifier_heads_to_merge,
                 mode='learnable',
                 num_epochs=epoch,
-                lr=lr
+                lr=lr,
+                current_task=current_task
             )
             # Update previous to be the merged result (this is the key difference!)
             previous_lora_weights = [merged_lora]
@@ -373,7 +374,8 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
         start_eval = time.time()
 
         # Create combined test set for all seen tasks
-        combined_test_sets = [test_sets[i] for i in seen_task_indices]
+        # The test_sets list is already permuted. We just need the first `current_task` sets.
+        combined_test_sets = test_sets[:current_task]
         combined_test = ConcatDataset(combined_test_sets)
         combined_test_loader = DataLoader(
             combined_test, batch_size=batch_size, shuffle=False, num_workers=num_workers
@@ -385,10 +387,11 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
             eval_metrics[f"combined_{name}"] = val
 
         # Also evaluate on individual country test sets
-        for idx in seen_task_indices:
-            country = countries[idx]
+        # Iterate through the position (0 to current_task-1) and the permuted index simultaneously.
+        for pos, idx in enumerate(seen_task_indices):
+            country = countries[idx]  # Get country name using the permuted index
             test_loader = DataLoader(
-                test_sets[idx],
+                test_sets[pos],  # Get dataset using the position
                 batch_size=batch_size,
                 shuffle=False,
                 num_workers=num_workers,
@@ -612,7 +615,8 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
         start_eval = time.time()
 
         # Create combined test set for all seen tasks
-        combined_test_sets = [test_sets[i] for i in seen_task_indices]
+        # The test_sets list is already permuted. We just need the first `current_task` sets.
+        combined_test_sets = test_sets[:current_task]
         combined_test = ConcatDataset(combined_test_sets)
         combined_test_loader = DataLoader(
             combined_test, batch_size=batch_size, shuffle=False, num_workers=num_workers
@@ -624,10 +628,11 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
             eval_metrics[f"combined_{name}"] = val
 
         # Also evaluate on individual country test sets
-        for idx in seen_task_indices:
-            country = countries[idx]
+        # Iterate through the position (0 to current_task-1) and the permuted index simultaneously.
+        for pos, idx in enumerate(seen_task_indices):
+            country = countries[idx]  # Get country name using the permuted index
             test_loader = DataLoader(
-                test_sets[idx],
+                test_sets[pos],  # Get dataset using the position
                 batch_size=batch_size,
                 shuffle=False,
                 num_workers=num_workers,
@@ -735,14 +740,14 @@ def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
 
 
 
-
+# Setup logging
 def setup_logging():
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
     )
     logging.info("Logger initialized")
 
-
+# setup logging and parse command line arguments
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", "-c", required=True)
@@ -751,11 +756,46 @@ def main():
     setup_logging()
     logging.info(f"Config path: {args.config}")
 
-    # ← simple dump of every line in the config into the log
+    # <- simple dump of every line in the config into the log
     with open(args.config, "r", encoding="utf-8") as f:
         logging.info("Config file contents:\n%s", f.read())
 
     print(main_from_config(args.config))
+
+# def main():
+#     setup_logging()
+#     # --- Temporary debug configuration ---
+#     config = {
+#         'test_type': 'LoRASoups',
+#         'model_module': 'SpectralGPT',
+#         'params': {
+#             'merging_approach': 'continual',
+#             'countries': ['Finland', 'Ireland', 'Serbia', 'Portugal'],
+#             'permutation': [0, 1, 2, 3],
+#             'subset_fraction': 0.1,
+#             'train_samples': 32,
+#             'test_samples': 16,
+#             'seed': 42,
+#             'batch_size': 16,
+#             'num_workers': 4,
+#             'epoch': 1,
+#             'lr': 1e-4,
+#             'memory_size': 16,
+#             'include_snowy': False,
+#             'include_cloudy': False,
+#             'save_dir': './saved_models',
+#             'weight_base_path': "/faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/saved_models/epoch20/task_tuning"
+#         }
+#     }
+#     logging.info("Using temporary debug configuration.")
+    
+#     # Manually call the core logic from main_from_config
+#     test_type = config["test_type"]
+#     params = config["params"]
+#     params["model_module"] = config["model_module"]
+    
+#     results = test_merging(test_type, params)
+#     print(results)
 
 
 if __name__ == "__main__":
