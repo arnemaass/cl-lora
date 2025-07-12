@@ -1,306 +1,276 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from safetensors.torch import load_file
+from torch.nn.utils import parametrize
+from typing import Iterable, List, Dict, Tuple, Optional
 
+class _LoRaSoupParam(nn.Module):
+    """
+    Parametrization that adds a weighted sum of precomputed LoRA deltas.
 
+    self.deltas: Tensor of shape [H, out_feats, in_feats]
+    self.alpha:  Tensor of shape [H] (trainable or fixed)
 
-def LoRASoupsMerge(pl_model, train_loader, val_loader, lora_heads, classifier_heads, mode='learnable', num_epochs=1, lr=1e-4):
-    '''
-    Apply LoraSoups by merging LoRA weights from multiple models.
+    forward(W): returns W + sum_h alpha[h] * deltas[h]
+    """
+    def __init__(self,
+                 deltas: List[torch.Tensor],  # each [out, in] = B @ A
+                 mode: str = "learnable"):
+        super().__init__()
+        # stack H heads → [H, out, in]
+        self.register_buffer('deltas', torch.stack(deltas))
+        H = self.deltas.size(0)
+        if mode == "learnable":
+            # initialize alpha_h = 1/H
+            init = 1.0 / H
+            self.alpha = nn.Parameter(torch.full((H,), init))
+        else:
+            # static alpha_h = 1/H
+            self.register_buffer('alpha', torch.full((H,), 1.0 / H))
 
+    def forward(self, W: torch.Tensor) -> torch.Tensor:
+        # delta = sum_h alpha_h · deltas[h]
+        delta = torch.einsum('h,hod->od', self.alpha, self.deltas)
+        return W + delta
     
-    1. Take the base model as input and freeze all parameters
-    2. Load the LoRA Heads
-    3. Initialze as many alpha values as LoRA heads
-    4. Add the additional LoRA Heads mutlpiplied by their alpha coeffiecients to the representive layer of the base model. 
-    5. If mode = learnable: set the alpha values as trainable, else alpha = 1/n, where n is the number of LoRA heads.
-    6. Unfreeze the classification head
-    7. Train the alpha values together with the classification head 
-    8. Return the merged model, LoRA weights and classifier weights
+def split_weight_bias(head: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+    # pull out the 2D weight and optional 1D bias
+    weight = next(v for v in head.values() if v.ndim == 2)
+    bias   = next((v for v in head.values() if v.ndim == 1), None)
+    return weight, bias
+
+
+def LoraSoupsMerge(
+    pl_model:           nn.Module,
+    train_loader_old:       Iterable,
+    train_loader_new:       Iterable,
+    lora_heads:         List[Dict[str, torch.Tensor]],   # each has w_a_{lid}, w_b_{lid}
+    classifier_heads:   Optional[List[Dict[str, torch.Tensor]]] = None,
+    mode:               str   = "learnable",  # "learnable" or "static"
+    num_epochs:         int   = 1,
+    lr:                  float = 1e-4,
+) -> Tuple[nn.Module, Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
+    """
+    Merge multiple LoRA adapters via per-head, per-layer α coefficients.
+
+    1. Freeze all base-model parameters.
+    2. Compute each layer's LoRA deltas: delta_i^l = B_i^l @ A_i^l.
+    3. Attach a _LoRaSoupParam to each target nn.Linear weight:
+         W' = W + sum_i alpha_i^l delta_i^l
+    4. If mode="learnable": alpha’s are trainable; else alpha_i^l = 1/n.
+    5. Unfreeze (or create) the classification head.
+    6. Train only the alpha’s (and classifier) via gradient descent.
+    7. Return (merged_model, merged_lora_weights, merged_classifier_weights).
 
     The update per layer l is computed as:
-    \Delta W^l = \alpha_1^l B_1A_1^T + \alpha_2^l B_2A_2^T
-    = alpha B[B1;B2] @ A[A1;A2]'
-    Delta Matrix = B_concat' @ alpha_block @ A_concat
+        delta_W^l = sum_i alpha_i^l · (B_i^l @ A_i^l)  
+    Raw LaTeX: $$\Delta W^l = \sum_i \alpha_i^l\,B_i^l A_i^{l\,T}$$
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    pl_model.to(device)
 
-    mode = 'static':
-        - Simply use equal weights for the LoRA Heads (e.g., if n = 2: \alpha = 0.5)
+    # 1. freeze base model
+    for p in pl_model.parameters():
+        p.requires_grad_(False)
 
-    mode = 'learnable':
-        - Freeze all base and LoRA weights
-        - Define per-layer trainable coefficients \alpha_i^l for each LoRA head i
-        - At each layer l, compute the LoRA update as:
-            \Delta W^l = \sum_i \alphai^l \cdot (Bi^l @ Ai^l)^T
-        - Learn \alpha via gradient descent on a small held-out set
+    # collect layer IDs from keys like "w_a_000"
+    layer_ids = sorted({k.split('_')[-1] for k in lora_heads[0] if k.startswith("w_a_")})
 
-    Args:
-        pl_model: PyTorch Lightning model (base model)
-        train_loader: Training data loader
-        val_loader: Validation data loader
-        lora_heads: List of LoRA weight dictionaries for each task
-        classifier_heads: List of classifier weight dictionaries for each task
-        mode: 'learnable' or 'static'
-        num_epochs: Number of training epochs (default: 1)
-        lr: Learning rate (default: 1e-4)
+    soup_params: List[_LoRaSoupParam] = []
+    trainables: List[nn.Parameter] = []
 
-    Returns:
-        Tuple of (merged_model, merged_lora_weights, merged_classifier_weights)
-        
-    '''
+    # 2. for each layer, compute deltas and attach parametrization
+    for lid in layer_ids:
+        deltas = []
+        for hd in lora_heads:
+            A = hd[f"w_a_{lid}"].to(device)   # [r, in]
+            B = hd[f"w_b_{lid}"].to(device)   # [out, r]
+            deltas.append(B @ A)              # → [out, in]
 
-    # 1. Freeze all base model parameters
-    for param in pl_model.parameters():
-        param.requires_grad = False
-    
-    # 2. Extract LoRA layers and organize by layer index
-    num_heads = len(lora_heads)
-    
-    # Find all layer indices from the first LoRA head
-    layer_indices = set()
-    for key in lora_heads[0].keys():
-        if key.startswith('w_a_') or key.startswith('w_b_'):
-            layer_idx = key.split('_')[-1]  # Extract XXX from w_a_XXX or w_b_XXX
-            layer_indices.add(layer_idx)
-    
-    layer_indices = sorted(list(layer_indices))
-    num_layers = len(layer_indices)
-    
-    # 3. Initialize alpha values
-    if mode == 'learnable':
-        # Trainable alpha parameters per layer per head
-        alpha_params = nn.ParameterDict()
-        for layer_idx in layer_indices:
-            alpha_params[f'layer_{layer_idx}'] = nn.Parameter(
-                torch.ones(num_heads) / num_heads
-            )
-    else:  # static mode
-        # Equal weights: alpha = 1/n
-        static_alpha = 1.0 / num_heads
-        alpha_params = {
-            f'layer_{layer_idx}': torch.full((num_heads,), static_alpha)
-            for layer_idx in layer_indices
-        }
-    
-    # 4. Instead of applying directly to model, store the merged weights
-    merged_lora_weights = {}
-    
-    for layer_idx in layer_indices:
-        layer_key = f'layer_{layer_idx}'
-        
-        if mode == 'learnable':
-            alphas = F.softmax(alpha_params[layer_key], dim=0)
-        else:
-            alphas = alpha_params[layer_key]
-        
-        # Collect all B and A matrices for this layer
-        B_matrices = []
-        A_matrices = []
-        
-        for head_idx, lora_head in enumerate(lora_heads):
-            a_key = f'w_a_{layer_idx}'
-            b_key = f'w_b_{layer_idx}'
+        zp = _LoRaSoupParam(deltas, mode=mode).to(device)
+        soup_params.append(zp)
+        clean = str(int(lid))  # "000"→"0"
+
+        # patch only linears whose shape matches delta_W^l:
+        # $$\Delta W^l = \sum_i \alpha_i^l\,B_i^l A_i^{l\,T}$$
+        for name, mod in pl_model.named_modules():
+            if isinstance(mod, nn.Linear) and f".{clean}." in name:
+                # shape check prevents size mismatch
+                delta = torch.einsum('h,hod->od', zp.alpha if isinstance(zp.alpha, torch.Tensor) else zp.alpha,
+                                     zp.deltas)
+                if mod.weight.shape == delta.shape:
+                    parametrize.register_parametrization(mod, "weight", zp, unsafe=False)
+
+        # collect alpha params if learnable
+        if mode == "learnable":
+            trainables.append(zp.alpha)
+
+    # 3. classifier head (robust extraction)
+    if classifier_heads:
+        head = classifier_heads[-1]
+        w, b = split_weight_bias(head)
+        w, b = w.to(device), b.to(device) if b is not None else None
+
+        clf = nn.Linear(w.size(1), w.size(0), bias=(b is not None)).to(device)
+        with torch.no_grad():
+            clf.weight.copy_(w)
+            if b is not None:
+                clf.bias.copy_(b)
+        pl_model.classifier = clf
+        for p in clf.parameters():
+            p.requires_grad_(True)
+        trainables += list(pl_model.classifier.parameters())
+
+        # Override forward to apply the classifier head.
+        if not hasattr(pl_model, "_orig_forward"):
+            pl_model._orig_forward = pl_model.forward
+            def _forward_with_classifier(x):
+                feats = pl_model._orig_forward(x)
+                # if features have the expected dimension, pass through classifier
+                if feats.ndim == 2 and feats.shape[1] == clf.weight.shape[1]:
+                    return pl_model.classifier(feats)
+                return feats
+            pl_model.forward = _forward_with_classifier
+
+    # 4. optimizer & loss
+    optim   = torch.optim.Adam(trainables, lr=lr)
+    loss_fn = nn.BCEWithLogitsLoss()  # multilabel float targets
+
+ # ───────────────────────────────────────────────────────────────
+    # 5. optimizer & multi-task training loop (old + new data)
+    # ───────────────────────────────────────────────────────────────
+
+    def _run(loader_old, loader_new):
+        for (x_old, y_old), (x_new, y_new) in zip(loader_old, loader_new):
+            # move to device
+            x_old, x_new = x_old.to(device), x_new.to(device)
+            # keep floats [B, C] for BCE
+            y_old, y_new = y_old.to(device).float(), y_new.to(device).float()
+
+            # forward
+            out_old = pl_model(x_old)  # [B, C]
+            out_new = pl_model(x_new)  # [B, C]
+
+            # compute losses
+            loss_old = loss_fn(out_old, y_old)
+            loss_new = loss_fn(out_new, y_new)
+
+            # total multi-task objective:
+            loss = loss_old + loss_new 
+
+            optim.zero_grad()
+            loss.backward()
+            optim.step()
+
+    # run for num_epochs
+    for ep in range(num_epochs):
+        _run(train_loader_old, train_loader_new)
+        print(f"[LoraSoupsMerge] epoch {ep+1}/{num_epochs}  "
+              f"layers={len(layer_ids)}  heads={len(lora_heads)}")
+
+    # 6. Build merged_lora: weighted combination of original LoRA heads
+    merged_lora: Dict[str, torch.Tensor] = {}
+    for lid, zp in zip(layer_ids, soup_params):
+        with torch.no_grad():
+            # Get the learned/fixed alpha weights
+            alpha_weights = zp.alpha.detach().cpu()  # [H]
             
-            if a_key in lora_head and b_key in lora_head:
-                A = lora_head[a_key]  # Shape: [rank, in_features]
-                B = lora_head[b_key]  # Shape: [out_features, rank]
-                
-                B_matrices.append(B)
+            # Collect original A and B matrices for this layer
+            A_matrices = []  # Will be [H, r, d]
+            B_matrices = []  # Will be [H, o, r]
+            
+            for hd in lora_heads:
+                A = hd[f"w_a_{lid}"]  # [r, d]
+                B = hd[f"w_b_{lid}"]  # [o, r]
                 A_matrices.append(A)
+                B_matrices.append(B)
+            
+            # Check if all ranks are the same
+            ranks = [A.shape[0] for A in A_matrices]
+            if len(set(ranks)) > 1:
+                # Different ranks - use delta-based merging instead
+                deltas = []
+                for A, B in zip(A_matrices, B_matrices):
+                    delta = B @ A  # [o, d]
+                    deltas.append(delta)
+                
+                # Stack deltas and apply weights
+                delta_stacked = torch.stack(deltas)  # [H, o, d]
+                merged_delta = torch.einsum('h,hod->od', alpha_weights, delta_stacked)
+                
+                # For different ranks, we can't create a single LoRA representation
+                # Store as a single delta weight instead
+                merged_lora[f"delta_{lid}"] = merged_delta.cpu()
+            else:
+                # Same ranks - use original Zip-LoRA approach
+                # Stack into tensors
+                A_stacked = torch.stack(A_matrices)  # [H, r, d]
+                B_stacked = torch.stack(B_matrices)  # [H, o, r]
+                
+                # Get dimensions
+                H, r, d = A_stacked.shape
+                o = B_stacked.shape[1]
+                
+                # Scale A matrices by alpha weights
+                A_scaled = A_stacked * alpha_weights.unsqueeze(1).unsqueeze(2)  # [H, r, d]
+                
+                # Compute reference delta for verification
+                delta_ref = torch.einsum("hor,hrd->hod", B_stacked, A_scaled).sum(0)
+                
+                # Flatten into one big LoRA (Zip-LoRA style)
+                A_tot = A_scaled.reshape(H * r, d) # [H·r, d]
+                B_tot = B_stacked.permute(1, 0, 2).reshape(o, H * r) # [o, H·r]
+                
+                # Reconstruct delta for sanity check
+                delta_recon = B_tot @ A_tot # [o, d]
+                
+                # Sanity check
+                if not torch.allclose(delta_recon, delta_ref, atol=1e-6):
+                    raise RuntimeError(f"reconstruction mismatch in layer {lid}")
+                
+                # Store merged parameters
+                merged_lora[f"w_a_{lid}"] = A_tot.cpu()
+                merged_lora[f"w_b_{lid}"] = B_tot.cpu()
+
+    # 7. Clean up parametrizations before returning (to avoid serialization issues)
+    for name, mod in list(pl_model.named_modules()):
+        if isinstance(mod, nn.Linear) and hasattr(mod, "parametrizations"):
+            # Remove parametrizations to make model serializable
+            if hasattr(mod.parametrizations, "weight"):
+                # Get the current parametrized weight
+                current_weight = mod.weight.detach()
+                # Remove the parametrization
+                parametrize.remove_parametrizations(mod, "weight")
+                # Optionally bake the learned weights back into the base model
+                # mod.weight.data = current_weight
+
+    # 8. Handle forward function for serialization
+    # If classifier was added, we need to keep the modified forward but make it serializable
+    if hasattr(pl_model, "_orig_forward") and hasattr(pl_model, "classifier"):
+        # Create a proper method instead of a closure to make it serializable
+        def forward_with_classifier(self, x):
+            feats = self._orig_forward(x)
+            # if features have the expected dimension, pass through classifier
+            if feats.ndim == 2 and feats.shape[1] == self.classifier.weight.shape[1]:
+                return self.classifier(feats)
+            return feats
         
-        if B_matrices and A_matrices:
-            # Concatenate B matrices: B[B1;B2] -> [out_features, total_rank]
-            B_concat = torch.cat(B_matrices, dim=1)  # Concatenate along rank dimension
-            
-            # Concatenate A matrices: A[A1;A2] -> [total_rank, in_features]
-            A_concat = torch.cat(A_matrices, dim=0)  # Concatenate along rank dimension
-            
-            # Create alpha weighting matrix - block diagonal to weight each head's contribution
-            rank_per_head = A_matrices[0].shape[0]  # Assuming same rank for all heads
-            alpha_diag = []
-            for head_idx, alpha in enumerate(alphas):
-                alpha_diag.append(alpha * torch.eye(rank_per_head, device=A_concat.device))
-            
-            # Create block diagonal alpha matrix
-            alpha_block = torch.block_diag(*alpha_diag)  # Shape: [total_rank, total_rank]
-            
-            # Compute: B_concat @ alpha_block @ A_concat^T
-            # This implements: W_delta = B[B1;B2] @ alpha @ A[A1;A2]'
-            lora_update = B_concat @ alpha_block @ A_concat  # Shape: [out_features, in_features]
-            
-            # Store merged weights WITHOUT applying to model yet
-            merged_lora_weights[layer_idx] = {
-                'w_a': A_concat,
-                'w_b': B_concat, 
-                'alpha_block': alpha_block,
-                'lora_update': lora_update  # Store the computed update
-            }
-            
-            # Apply LoRA update to model - but make this optional/safer
-            apply_lora_to_model(pl_model, layer_idx, lora_update)
-    
-    # 5. Merge classifier heads
+        # Bind the method to the model
+        import types
+        pl_model.forward = types.MethodType(forward_with_classifier, pl_model)
+        
+    elif hasattr(pl_model, "_orig_forward"):
+        # Only restore original forward if no classifier was added
+        pl_model.forward = pl_model._orig_forward
+        delattr(pl_model, "_orig_forward")
+
+    # 9. build merged_classifier dict (alternative approach)
     merged_classifier = {}
-    
-    for head_idx, classifier_head in enumerate(classifier_heads):
-        weight = 1.0 / num_heads  # Equal weighting
+    classifier_mod = getattr(pl_model, "classifier", None)
+    if isinstance(classifier_mod, nn.Linear):
+        W = classifier_mod.weight.detach().cpu()
+        out_feats, in_feats = W.shape
+        key = f"fc_{in_feats}in_{out_feats}out"
+        merged_classifier[key] = W
         
-        # Look for classifier weights (fc_XXXin_XXXout pattern)
-        for param_name, param_tensor in classifier_head.items():
-            if param_name.startswith('fc_'):
-                if param_name not in merged_classifier:
-                    merged_classifier[param_name] = weight * param_tensor
-                else:
-                    merged_classifier[param_name] += weight * param_tensor
-    
-    # Apply merged classifier weights
-    classifier = None
-    if hasattr(pl_model, 'classifier'):
-        classifier = pl_model.classifier
-    elif hasattr(pl_model, 'head'):
-        classifier = pl_model.head
-    elif hasattr(pl_model, 'fc'):
-        classifier = pl_model.fc
-    
-    if classifier is not None and merged_classifier:
-        # Apply the merged classifier weights
-        for param_name, param_tensor in merged_classifier.items():
-            if hasattr(classifier, 'weight'):
-                classifier.weight.data = param_tensor
-    
-    # 6. Unfreeze classification head
-    if classifier is not None:
-        for param in classifier.parameters():
-            param.requires_grad = True
-    
-    # 7. Training loop - needed for both modes to train the merged classifier
-    if True:  # Train classifier in both modes
-        trainable_params = []
-        
-        # Add alpha parameters only in learnable mode
-        if mode == 'learnable':
-            for param in alpha_params.values():
-                if isinstance(param, nn.Parameter):
-                    trainable_params.append(param)
-        
-        # Add classifier parameters for both modes
-        if classifier is not None:
-            trainable_params.extend(classifier.parameters())
-        
-        if trainable_params:
-            optimizer = torch.optim.Adam(trainable_params, lr=lr)
-            criterion = nn.CrossEntropyLoss()
-            
-            pl_model.train()
-            for epoch in range(num_epochs):
-                total_loss = 0
-                num_batches = 0
-                
-                for batch in train_loader:
-                    optimizer.zero_grad()
-                    
-                    # Handle different batch formats
-                    if isinstance(batch, (list, tuple)) and len(batch) >= 2:
-                        inputs, targets = batch[0], batch[1]
-                    else:
-                        inputs = batch['image'] if isinstance(batch, dict) else batch
-                        targets = batch['label'] if isinstance(batch, dict) else None
-                    
-                    if targets is None:
-                        continue
-                    
-                    outputs = pl_model(inputs)
-                    loss = criterion(outputs, targets)
-                    
-                    loss.backward()
-                    optimizer.step()
-                    
-                    total_loss += loss.item()
-                    num_batches += 1
-                
-                avg_loss = total_loss / max(num_batches, 1)
-                mode_desc = "learnable alphas + classifier" if mode == 'learnable' else "classifier only"
-                print(f"Epoch {epoch + 1}/{num_epochs}, Training {mode_desc}, Average Loss: {avg_loss:.4f}")
-    
-    # 8. Return merged model, LoRA weights, and classifier weights
-    return pl_model, merged_lora_weights, merged_classifier
-
-def apply_lora_to_model(pl_model, layer_idx, lora_update): # TODO to be edited
-    """Safely apply LoRA update to model layer."""
-    # Try multiple possible layer naming conventions
-    possible_names = [
-        f'blocks.{layer_idx}.attn.qkv',
-        f'model.blocks.{layer_idx}.attn.qkv', 
-        f'backbone.blocks.{layer_idx}.attn.qkv',
-        f'encoder.layer.{layer_idx}.attention.self.query',  # For BERT-like models
-    ]
-    
-    for layer_name in possible_names:
-        try:
-            target_layer = pl_model
-            for part in layer_name.split('.'):
-                target_layer = getattr(target_layer, part)
-            
-            if hasattr(target_layer, 'weight'):
-                # Instead of += which accumulates, set the new weight
-                if not hasattr(target_layer, '_original_weight'):
-                    target_layer._original_weight = target_layer.weight.data.clone()
-                
-                target_layer.weight.data = target_layer._original_weight + lora_update
-                print(f"Successfully applied LoRA update to {layer_name}")
-                return True
-                
-        except AttributeError:
-            continue
-    
-    print(f"Warning: Could not find suitable layer for index {layer_idx}")
-    return False
-
-
-class AlphaMerger(nn.Module):
-    """
-    Returns softmax-normalized per-layer, per-head alpha coefficients.
-    """
-    def __init__(self, num_layers: int, num_heads: int):
-        super().__init__()
-        self.alpha = nn.Parameter(torch.ones(num_layers, num_heads) / num_heads)
-
-    def forward(self):
-        return F.softmax(self.alpha, dim=-1)  # (num_layers, num_heads)
-
-
-class LayerMerger(nn.Module):
-    """
-    Merges LoRA updates from multiple heads into a base model.
-    """
-    def __init__(self, base_weights: torch.Tensor, num_heads: int, num_layers: int, learnable: bool = True):
-        super().__init__()
-        self.base_weights = base_weights  # Tensor of shape (num_layers, ...)
-        self.num_heads = num_heads
-        self.num_layers = num_layers
-        self.learnable = learnable
-
-        # Learnable alpha parameters for weighted merging
-        init_alpha = torch.ones(num_layers, num_heads) / num_heads
-        self.alpha = nn.Parameter(init_alpha) if learnable else init_alpha
-
-    def forward(self, lora_heads: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            lora_heads: Tensor (num_layers, num_heads, B_dim, A_dim)
-
-        Returns:
-            merged_weights: Tensor (num_layers, B_dim, A_dim)
-        """
-        if self.learnable:
-            alphas = F.softmax(self.alpha, dim=-1)
-        else:
-            alphas = self.alpha  # Static equal weighting
-
-        merged_weights = []
-        for l in range(self.num_layers):
-            lora_update = sum(alphas[l, i] * lora_heads[l, i] for i in range(self.num_heads))
-            merged_layer = self.base_weights[l] + lora_update
-            merged_weights.append(merged_layer)
-
-        return torch.stack(merged_weights, dim=0)
+    return pl_model, merged_lora, merged_classifier
