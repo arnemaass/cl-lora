@@ -481,8 +481,7 @@ def LoraSoupsMerge_continual(
 
 def LoraSoupsMerge_from_scratch(
     pl_model: nn.Module,
-    train_loader_old: Iterable,
-    train_loader_new: Iterable,
+    train_loader: Iterable,
     lora_heads: List[Dict[str, torch.Tensor]],
     classifier_heads: Optional[List[Dict[str, torch.Tensor]]] = None,
     mode: str = "learnable",
@@ -494,7 +493,8 @@ def LoraSoupsMerge_from_scratch(
     Merges all task adapters from scratch to create a single unified adapter.
 
     This function takes the original, individual adapters for all tasks seen so far
-    (1...T) and merges them together in a single step.
+    (1...T) and merges them together in a single step. The training process uses a
+    single data loader containing a mix of samples from all tasks.
 
     - **LoRA Merging**: Learns coefficients to combine all original LoRA adapters provided.
     - **Classifier Merging**: Creates a new classifier by uniformly averaging the weights
@@ -502,8 +502,7 @@ def LoraSoupsMerge_from_scratch(
 
     Args:
         pl_model (nn.Module): The base model (e.g., a Pytorch Lightning module).
-        train_loader_old (Iterable): DataLoader for the old task/replay data.
-        train_loader_new (Iterable): DataLoader for the new task data.
+        train_loader (Iterable): A single DataLoader containing samples from all tasks.
         lora_heads (List[Dict[str, torch.Tensor]]): A list of T LoRA state dicts,
             one for each original task adapter from task 1 to T.
         classifier_heads (Optional[List[Dict[str, torch.Tensor]]]): A list of T classifier
@@ -698,18 +697,16 @@ def LoraSoupsMerge_from_scratch(
     loss_fn = nn.BCEWithLogitsLoss()
 
     for ep in range(num_epochs):
-        # ---  Use zip to automatically handle different dataloader lengths ---
+        # --- Iterate over the unified data loader ---
         pbar = tqdm(
-            zip(train_loader_old, train_loader_new),
+            train_loader,
             desc=f"Epoch {ep + 1}/{num_epochs}",
             unit="batch",
         )
-        for batch_old, batch_new in pbar:
-            x_old, y_old = batch_old
-            x_new, y_new = batch_new
-
-            x = torch.cat([x_old, x_new]).to(device)
-            y = torch.cat([y_old, y_new]).to(device).float()
+        for batch in pbar:
+            x, y = batch
+            x = x.to(device)
+            y = y.to(device).float()
 
             out = pl_model(x)
             loss = loss_fn(out, y)
