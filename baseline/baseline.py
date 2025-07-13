@@ -275,7 +275,7 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
         trainer = create_trainer(params)
         if model_module == "SoftCon":
             # Reload the base model weights
-            base_model = load_model(r=rank) # Load base model with pretrained weights
+            base_model = load_model(r=rank)  # Load base model with pretrained weights
             pl_model = SoftConLightningModule(base_model, num_classes=19, lr=lr)
         elif model_module == "SpectralGPT":
             # Reload the base model weights
@@ -695,7 +695,9 @@ def main_from_config(config_path: str) -> pd.DataFrame:
     # Dynamically update save_dir based on permutation
     permutation = params["permutation"]
     permutation_str = "_".join(map(str, permutation))
-    params["save_dir"] = os.path.join(params["save_dir"], test_type, f"permutation_{permutation_str}")
+    params["save_dir"] = os.path.join(
+        params["save_dir"], test_type, f"permutation_{permutation_str}"
+    )
     os.makedirs(params["save_dir"], exist_ok=True)  # Ensure the directory exists
 
     # Configure logging to store a copy of the log in the save directory
@@ -705,8 +707,8 @@ def main_from_config(config_path: str) -> pd.DataFrame:
         format="%(asctime)s %(levelname)s %(message)s",
         handlers=[
             logging.StreamHandler(),  # Log to console
-            logging.FileHandler(log_file)  # Log to file
-        ]
+            logging.FileHandler(log_file),  # Log to file
+        ],
     )
     logging.info(f"Save directory set to: {params['save_dir']}")
 

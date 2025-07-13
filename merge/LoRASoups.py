@@ -1,11 +1,11 @@
+import logging
+import types
+from typing import Dict, Iterable, List, Optional, Tuple
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils import parametrize
-from typing import Iterable, List, Dict, Tuple, Optional, Any
-import logging
-from itertools import zip_longest
-import types
 from tqdm import tqdm
 
 # Setup logger
@@ -26,15 +26,14 @@ class _LoRaSoupParam(nn.Module):
                                               head weights. Can be learnable
                                               or fixed.
     """
-    def __init__(self,
-                 deltas: List[torch.Tensor],
-                 mode: str = "learnable"):
+
+    def __init__(self, deltas: List[torch.Tensor], mode: str = "learnable"):
         super().__init__()
         if not deltas:
             raise ValueError("Deltas list cannot be empty.")
-        
+
         # Stack H heads → [H, out, in]
-        self.register_buffer('deltas', torch.stack(deltas))
+        self.register_buffer("deltas", torch.stack(deltas))
         H = self.deltas.size(0)
 
         if mode == "learnable":
@@ -42,7 +41,7 @@ class _LoRaSoupParam(nn.Module):
             self.alpha = nn.Parameter(torch.zeros(H))
         elif mode == "static":
             # Use a fixed, non-trainable buffer for alpha
-            self.register_buffer('alpha', torch.full((H,), 1.0 / H))
+            self.register_buffer("alpha", torch.full((H,), 1.0 / H))
         else:
             raise ValueError(f"Unknown mode '{mode}'. Use 'learnable' or 'static'.")
 
@@ -51,12 +50,12 @@ class _LoRaSoupParam(nn.Module):
         # Normalize alpha weights to sum to 1
         alpha_normalized = F.softmax(self.alpha, dim=0)
         # delta = sum_h alpha_h · deltas[h]
-        delta = torch.einsum('h,hod->od', alpha_normalized, self.deltas)
+        delta = torch.einsum("h,hod->od", alpha_normalized, self.deltas)
         return W + delta
 
 
 def _split_weight_bias(
-    head: Dict[str, torch.Tensor]
+    head: Dict[str, torch.Tensor],
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
     """Extracts the weight and optional bias from a state dict."""
     try:
@@ -107,16 +106,18 @@ def _are_ranks_consistent(lora_heads: List[Dict[str, torch.Tensor]]) -> bool:
 
     # Robustly discover all layer IDs from all heads that have w_a matrices
     all_w_a_keys = {k for h in lora_heads for k in h if k.startswith("w_a_")}
-    
+
     # If any head lacks w_a keys, we must use delta merging.
     for i, head in enumerate(lora_heads):
         if not any(k.startswith("w_a_") for k in head):
             log.info(f"Head {i} is in delta-only format. Will use delta-based merging.")
             return False
 
-    layer_ids = sorted({k.split('_')[-1] for k in all_w_a_keys})
+    layer_ids = sorted({k.split("_")[-1] for k in all_w_a_keys})
     if not layer_ids:
-        log.info("No w_a/w_b layers found in any head. Assuming delta-based merging is intended.")
+        log.info(
+            "No w_a/w_b layers found in any head. Assuming delta-based merging is intended."
+        )
         return False
 
     for lid in layer_ids:
@@ -124,11 +125,13 @@ def _are_ranks_consistent(lora_heads: List[Dict[str, torch.Tensor]]) -> bool:
         for head in lora_heads:
             # All heads are guaranteed to have w_a keys at this point
             ranks.append(head[f"w_a_{lid}"].shape[0])
-        
+
         if len(set(ranks)) > 1:
-            log.info(f"Inconsistent ranks found for layer {lid}: {ranks}. Will use delta-based merging.")
+            log.info(
+                f"Inconsistent ranks found for layer {lid}: {ranks}. Will use delta-based merging."
+            )
             return False
-            
+
     log.info("All LoRA heads have consistent ranks. Will use merging.")
     return True
 
@@ -137,7 +140,7 @@ def _merge_lora_weights(
     layer_ids: List[str],
     soup_params: List[_LoRaSoupParam],
     lora_heads: List[Dict[str, torch.Tensor]],
-    ranks_are_consistent: bool
+    ranks_are_consistent: bool,
 ) -> Dict[str, torch.Tensor]:
     """
     Creates a new merged LoRA state dict from the trained soup parameters.
@@ -155,35 +158,37 @@ def _merge_lora_weights(
     for lid, soup_param in zip(layer_ids, soup_params):
         with torch.no_grad():
             alpha = soup_param.alpha.detach().cpu()  # [H]
-            
+
             if not ranks_are_consistent:
                 # Strategy 1: Ranks differ. Merge deltas directly.
                 deltas = soup_param.deltas.cpu()  # [H, o, d]
-                merged_delta = torch.einsum('h,hod->od', alpha, deltas)
+                merged_delta = torch.einsum("h,hod->od", alpha, deltas)
                 merged_lora[f"delta_{lid}"] = merged_delta
             else:
                 # Strategy 2: Ranks are consistent. Use Zip-LoRA style merging.
                 A_mats = torch.stack([h[f"w_a_{lid}"] for h in lora_heads])  # [H, r, d]
                 B_mats = torch.stack([h[f"w_b_{lid}"] for h in lora_heads])  # [H, o, r]
-                
+
                 H, r, d = A_mats.shape
                 o = B_mats.shape[1]
-                
+
                 # Scale A matrices by alpha weights and flatten
                 A_scaled = A_mats * alpha.view(H, 1, 1)
                 A_tot = A_scaled.reshape(H * r, d)
-                
+
                 # Permute and flatten B matrices
                 B_tot = B_mats.permute(1, 0, 2).reshape(o, H * r)
-                
+
                 # Sanity check reconstruction
                 delta_ref = torch.einsum("hor,hrd->hod", B_mats, A_scaled).sum(0)
                 if not torch.allclose(B_tot @ A_tot, delta_ref, atol=1e-6):
-                    log.error(f"Reconstruction mismatch in layer {lid}. Merged weights may be incorrect.")
+                    log.error(
+                        f"Reconstruction mismatch in layer {lid}. Merged weights may be incorrect."
+                    )
 
                 merged_lora[f"w_a_{lid}"] = A_tot.cpu()
-                merged_lora[f"w_b_{lid}"]    = B_tot.cpu()
-                
+                merged_lora[f"w_b_{lid}"] = B_tot.cpu()
+
     return merged_lora
 
 
@@ -200,16 +205,16 @@ def _cleanup_and_bake_weights(model: nn.Module) -> None:
     for name, mod in list(model.named_modules()):
         if isinstance(mod, nn.Linear) and parametrize.is_parametrized(mod):
             parametrize.remove_parametrizations(mod, "weight", leave_parametrized=False)
-            
+
     # 2) If a classifier was added, re-install a fresh eval-forward
     if hasattr(model, "_orig_forward") and hasattr(model, "classifier"):
         # Capture the original forward method in a local variable for the closure.
         original_forward = model._orig_forward
-        
+
         def eval_forward(self, x: torch.Tensor) -> torch.Tensor:
             # Call the captured original forward method, not via self.
-            feats = original_forward(x)        # encoder output
-            return self.classifier(feats)      # baked-in classifier
+            feats = original_forward(x)  # encoder output
+            return self.classifier(feats)  # baked-in classifier
 
         model.forward = types.MethodType(eval_forward, model)
         # Now it's safe to delete the attribute.
@@ -225,28 +230,38 @@ def LoraSoupsMerge_continual(
     mode: str = "learnable",
     num_epochs: int = 1,
     lr: float = 1e-4,
-    current_task: int = 2, # Add current_task parameter
+    current_task: int = 2,  # Add current_task parameter
 ) -> Tuple[nn.Module, Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
     """
-    Merges multiple LoRA adapters by learning per-head, per-layer coefficients (alpha).
+    Incrementally merges a new task's LoRA adapter into a previously merged adapter.
 
-    This function freezes the base model, attaches learnable parametrizations to each
-    LoRA-targeted linear layer, and trains the alpha coefficients (and optionally a new
-    classifier head) on a combined dataset.
+    This function is designed for a continual learning scenario. It takes the result
+    of the previous merge (one LoRA adapter, one classifier) and the components of a
+    new task, then creates a new merged state.
+
+    - **LoRA Merging**: Learns coefficients to combine the previous merged LoRA adapter
+      and the new task's LoRA adapter.
+    - **Classifier Merging**: Applies a weighted average to the classifier heads based
+      on the task count (e.g., for task T, old_weight=(T-1)/T, new_weight=1/T).
 
     Args:
         pl_model (nn.Module): The base model (e.g., a Pytorch Lightning module).
         train_loader_old (Iterable): DataLoader for the old task/replay data.
         train_loader_new (Iterable): DataLoader for the new task data.
-        lora_heads (List[Dict[str, torch.Tensor]]): A list of state dicts, one for each LoRA adapter.
-        classifier_heads (Optional[List[Dict[str, torch.Tensor]]]): Optional list of classifier state dicts.
-        mode (str): Merging mode. "learnable" for trainable alpha, "static" for uniform alpha =1/H.
+        lora_heads (List[Dict[str, torch.Tensor]]): A list of 2 LoRA state dicts:
+            [0]: The previously merged LoRA adapter.
+            [1]: The new task's LoRA adapter.
+        classifier_heads (Optional[List[Dict[str, torch.Tensor]]]): A list of 2 classifier state dicts:
+            [0]: The previously merged classifier head.
+            [1]: The new task's classifier head.
+        mode (str): Merging mode. "learnable" for trainable alpha, "static" for uniform alpha.
         num_epochs (int): Number of epochs to train the merging coefficients.
         lr (float): Learning rate for the optimizer.
+        current_task (int): The number of the current task (e.g., 2, 3, ...). Used for weighting.
 
     Returns:
         Tuple[nn.Module, Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
-            - The model with merged weights baked in.
+            - The model with the newly merged weights baked in.
             - The state dict of the new merged LoRA adapter.
             - The state dict of the new merged classifier head.
     """
@@ -267,21 +282,26 @@ def LoraSoupsMerge_continual(
 
     # 2. Gather zero-padded IDs from the LoRA keys:
     # e.g. layer_ids = ["000", "007", "013", ...]
-    layer_ids = sorted({
-        k.split('_')[-1]
-        for k in lora_heads[0]
-        if k.startswith("w_a_")
-    })
+    layer_ids = sorted(
+        {k.split("_")[-1] for k in lora_heads[0] if k.startswith("w_a_")}
+    )
 
     # Fallback for the case where the first head is a delta-only merge result.
     if not layer_ids and lora_heads:
-        log.warning("Initial layer ID discovery failed (no 'w_a_' keys). "
-                    "Falling back to robust discovery from all heads.")
-        layer_ids = sorted(list(set(
-            k.split('_')[-1]
-            for h in lora_heads for k in h
-            if k.startswith("w_a_") or k.startswith("delta_")
-        )))
+        log.warning(
+            "Initial layer ID discovery failed (no 'w_a_' keys). "
+            "Falling back to robust discovery from all heads."
+        )
+        layer_ids = sorted(
+            list(
+                set(
+                    k.split("_")[-1]
+                    for h in lora_heads
+                    for k in h
+                    if k.startswith("w_a_") or k.startswith("delta_")
+                )
+            )
+        )
 
     log.debug(f"Discovered layer IDs: {layer_ids}")
     ranks_are_consistent = _are_ranks_consistent(lora_heads)
@@ -290,13 +310,15 @@ def LoraSoupsMerge_continual(
     soup_params: List[_LoRaSoupParam] = []
     patched_modules: List[str] = []
     # Only target q and v layers (since these have been trained)
-    suffixes = ("q", "k", "v", "proj")
+    suffixes = ("q", "k")
 
     # For each ID, convert to a “clean” integer string:
     for lid in layer_ids:
         deltas = _compute_deltas_for_layer(lid, lora_heads, device)
         if not deltas:
-            log.warning(f"No deltas computed for layer ID {lid}, skipping patch for this layer.")
+            log.warning(
+                f"No deltas computed for layer ID {lid}, skipping patch for this layer."
+            )
             continue
 
         parametrization = _LoRaSoupParam(deltas, mode=mode).to(device)
@@ -310,17 +332,21 @@ def LoraSoupsMerge_continual(
             if (
                 isinstance(mod, nn.Linear)
                 and f".blocks.{clean_id}.attn." in name
-                and name.rsplit('.', 1)[-1] in suffixes
+                and name.rsplit(".", 1)[-1] in suffixes
             ):
                 delta_shape = parametrization.deltas.shape[1:]
                 if mod.weight.shape != delta_shape:
-                    log.debug(f"Skipping patch for '{name}': shape mismatch. "
-                              f"Weight: {mod.weight.shape}, Delta: {delta_shape}")
+                    log.debug(
+                        f"Skipping patch for '{name}': shape mismatch. "
+                        f"Weight: {mod.weight.shape}, Delta: {delta_shape}"
+                    )
                     continue
 
                 # This is one of the LoRA-targeted linears!
                 log.info(f"Patching module '{name}' for layer ID {lid}")
-                parametrize.register_parametrization(mod, "weight", parametrization, unsafe=False)
+                parametrize.register_parametrization(
+                    mod, "weight", parametrization, unsafe=False
+                )
                 patched_modules.append(name)
                 found_module_for_lid = True
 
@@ -344,15 +370,19 @@ def LoraSoupsMerge_continual(
         # In a continual loop, we expect two heads: the previously merged one and the new one.
         # The weighting should be based on the number of tasks seen so far.
         if len(classifier_heads) > 2:
-            log.warning(f"Received {len(classifier_heads)} classifier heads. "
-                        "For correct weighting, ensure only the previous merge result and the new head are passed. "
-                        "Using the first as 'old' and the last as 'new'.")
+            log.warning(
+                f"Received {len(classifier_heads)} classifier heads. "
+                "For correct weighting, ensure only the previous merge result and the new head are passed. "
+                "Using the first as 'old' and the last as 'new'."
+            )
 
         # Weight by number of tasks (e.g., for task 3, weights are 2/3 for old, 1/3 for new)
         w_old = (current_task - 1) / current_task
         w_new = 1 / current_task
 
-        log.info(f"Classifier merge weights for task {current_task}: old={w_old:.3f}, new={w_new:.3f}")
+        log.info(
+            f"Classifier merge weights for task {current_task}: old={w_old:.3f}, new={w_new:.3f}"
+        )
 
         # Use the first head as the accumulated "old" state and the last as the "new" task's head.
         weight_old, bias_old = _split_weight_bias(classifier_heads[0])
@@ -364,13 +394,14 @@ def LoraSoupsMerge_continual(
             merged_bias = w_old * bias_old + w_new * bias_new
 
         num_classes, hidden_dim = merged_weight.shape
-        clf = nn.Linear(hidden_dim, num_classes,
-                               bias=merged_bias is not None).to(device)
+        clf = nn.Linear(hidden_dim, num_classes, bias=merged_bias is not None).to(
+            device
+        )
         with torch.no_grad():
             clf.weight.copy_(merged_weight)
             if merged_bias is not None:
                 clf.bias.copy_(merged_bias)
-        
+
         pl_model.classifier = clf
         pl_model.classifier.requires_grad_(True)
         trainables.extend(pl_model.classifier.parameters())
@@ -378,19 +409,20 @@ def LoraSoupsMerge_continual(
         # Monkey-patch the forward method
         if not hasattr(pl_model, "_orig_forward"):
             pl_model._orig_forward = pl_model.forward
-        
+
         def _forward_with_classifier(self, x: torch.Tensor) -> torch.Tensor:
             feats = self._orig_forward(x)
             return self.classifier(feats)
+
         pl_model.forward = types.MethodType(_forward_with_classifier, pl_model)
 
     # 5. Setup optimizer and training loop
     # --- START: Add trainable parameter logging ---
-    lora_params = sum(p.alpha.numel() for p in soup_params if hasattr(p, 'alpha'))
+    lora_params = sum(p.alpha.numel() for p in soup_params if hasattr(p, "alpha"))
     cls_params = 0
     if hasattr(pl_model, "classifier"):
         cls_params = sum(p.numel() for p in pl_model.classifier.parameters())
-    
+
     total_params = sum(p.numel() for p in trainables)
 
     log.info(f"[LoraSoupsMerge] Trainable LoRA-merge params : {lora_params:,}")
@@ -401,19 +433,21 @@ def LoraSoupsMerge_continual(
     if not trainables:
         log.warning("No trainable parameters found. Skipping training.")
         num_epochs = 0
-        
+
     optim = torch.optim.Adam(trainables, lr=lr)
     loss_fn = nn.BCEWithLogitsLoss()
 
     for ep in range(num_epochs):
         # ---  Use zip to automatically handle different dataloader lengths ---
-        pbar = tqdm(zip(train_loader_old, train_loader_new),
-                    desc=f"Epoch {ep+1}/{num_epochs}", unit="batch")
+        pbar = tqdm(
+            zip(train_loader_old, train_loader_new),
+            desc=f"Epoch {ep + 1}/{num_epochs}",
+            unit="batch",
+        )
         for batch_old, batch_new in pbar:
-
             x_old, y_old = batch_old
             x_new, y_new = batch_new
-            
+
             x = torch.cat([x_old, x_new]).to(device)
             y = torch.cat([y_old, y_new]).to(device).float()
 
@@ -429,21 +463,20 @@ def LoraSoupsMerge_continual(
     # Only build LoRA weights if there are soup_params to process
     merged_lora = {}
     if soup_params:
-        merged_lora = _merge_lora_weights(layer_ids, soup_params, lora_heads, ranks_are_consistent)
-    
+        merged_lora = _merge_lora_weights(
+            layer_ids, soup_params, lora_heads, ranks_are_consistent
+        )
+
     merged_classifier = {}
     if hasattr(pl_model, "classifier") and isinstance(pl_model.classifier, nn.Linear):
-        merged_classifier['weight'] = pl_model.classifier.weight.detach().cpu()
+        merged_classifier["weight"] = pl_model.classifier.weight.detach().cpu()
         if pl_model.classifier.bias is not None:
-            merged_classifier['bias'] = pl_model.classifier.bias.detach().cpu()
+            merged_classifier["bias"] = pl_model.classifier.bias.detach().cpu()
 
     # 7. Clean up model by baking weights and restoring original state
     _cleanup_and_bake_weights(pl_model)
 
     return pl_model, merged_lora, merged_classifier
-
-
-
 
 
 def LoraSoupsMerge_from_scratch(
@@ -455,28 +488,34 @@ def LoraSoupsMerge_from_scratch(
     mode: str = "learnable",
     num_epochs: int = 1,
     lr: float = 1e-4,
-    current_task: int = 2, # Add current_task parameter
+    current_task: int = 2,  # Add current_task parameter
 ) -> Tuple[nn.Module, Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
     """
-    Merges multiple LoRA adapters by learning per-head, per-layer coefficients (alpha).
+    Merges all task adapters from scratch to create a single unified adapter.
 
-    This function freezes the base model, attaches learnable parametrizations to each
-    LoRA-targeted linear layer, and trains the alpha coefficients (and optionally a new
-    classifier head) on a combined dataset.
+    This function takes the original, individual adapters for all tasks seen so far
+    (1...T) and merges them together in a single step.
+
+    - **LoRA Merging**: Learns coefficients to combine all original LoRA adapters provided.
+    - **Classifier Merging**: Creates a new classifier by uniformly averaging the weights
+      of all original classifier heads provided.
 
     Args:
         pl_model (nn.Module): The base model (e.g., a Pytorch Lightning module).
         train_loader_old (Iterable): DataLoader for the old task/replay data.
         train_loader_new (Iterable): DataLoader for the new task data.
-        lora_heads (List[Dict[str, torch.Tensor]]): A list of state dicts, one for each LoRA adapter.
-        classifier_heads (Optional[List[Dict[str, torch.Tensor]]]): Optional list of classifier state dicts.
-        mode (str): Merging mode. "learnable" for trainable alpha, "static" for uniform alpha =1/H.
+        lora_heads (List[Dict[str, torch.Tensor]]): A list of T LoRA state dicts,
+            one for each original task adapter from task 1 to T.
+        classifier_heads (Optional[List[Dict[str, torch.Tensor]]]): A list of T classifier
+            state dicts, one for each original task.
+        mode (str): Merging mode. "learnable" for trainable alpha, "static" for uniform alpha.
         num_epochs (int): Number of epochs to train the merging coefficients.
         lr (float): Learning rate for the optimizer.
+        current_task (int): The number of the current task (e.g., 2, 3, ...). Used for logging.
 
     Returns:
         Tuple[nn.Module, Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
-            - The model with merged weights baked in.
+            - The model with the newly merged weights baked in.
             - The state dict of the new merged LoRA adapter.
             - The state dict of the new merged classifier head.
     """
@@ -497,21 +536,26 @@ def LoraSoupsMerge_from_scratch(
 
     # 2. Gather zero-padded IDs from the LoRA keys:
     # e.g. layer_ids = ["000", "007", "013", ...]
-    layer_ids = sorted({
-        k.split('_')[-1]
-        for k in lora_heads[0]
-        if k.startswith("w_a_")
-    })
+    layer_ids = sorted(
+        {k.split("_")[-1] for k in lora_heads[0] if k.startswith("w_a_")}
+    )
 
     # Fallback for the case where the first head is a delta-only merge result.
     if not layer_ids and lora_heads:
-        log.warning("Initial layer ID discovery failed (no 'w_a_' keys). "
-                    "Falling back to robust discovery from all heads.")
-        layer_ids = sorted(list(set(
-            k.split('_')[-1]
-            for h in lora_heads for k in h
-            if k.startswith("w_a_") or k.startswith("delta_")
-        )))
+        log.warning(
+            "Initial layer ID discovery failed (no 'w_a_' keys). "
+            "Falling back to robust discovery from all heads."
+        )
+        layer_ids = sorted(
+            list(
+                set(
+                    k.split("_")[-1]
+                    for h in lora_heads
+                    for k in h
+                    if k.startswith("w_a_") or k.startswith("delta_")
+                )
+            )
+        )
 
     log.debug(f"Discovered layer IDs: {layer_ids}")
     ranks_are_consistent = _are_ranks_consistent(lora_heads)
@@ -526,7 +570,9 @@ def LoraSoupsMerge_from_scratch(
     for lid in layer_ids:
         deltas = _compute_deltas_for_layer(lid, lora_heads, device)
         if not deltas:
-            log.warning(f"No deltas computed for layer ID {lid}, skipping patch for this layer.")
+            log.warning(
+                f"No deltas computed for layer ID {lid}, skipping patch for this layer."
+            )
             continue
 
         parametrization = _LoRaSoupParam(deltas, mode=mode).to(device)
@@ -540,17 +586,21 @@ def LoraSoupsMerge_from_scratch(
             if (
                 isinstance(mod, nn.Linear)
                 and f".blocks.{clean_id}.attn." in name
-                and name.rsplit('.', 1)[-1] in suffixes
+                and name.rsplit(".", 1)[-1] in suffixes
             ):
                 delta_shape = parametrization.deltas.shape[1:]
                 if mod.weight.shape != delta_shape:
-                    log.debug(f"Skipping patch for '{name}': shape mismatch. "
-                              f"Weight: {mod.weight.shape}, Delta: {delta_shape}")
+                    log.debug(
+                        f"Skipping patch for '{name}': shape mismatch. "
+                        f"Weight: {mod.weight.shape}, Delta: {delta_shape}"
+                    )
                     continue
 
                 # This is one of the LoRA-targeted linears!
                 log.info(f"Patching module '{name}' for layer ID {lid}")
-                parametrize.register_parametrization(mod, "weight", parametrization, unsafe=False)
+                parametrize.register_parametrization(
+                    mod, "weight", parametrization, unsafe=False
+                )
                 patched_modules.append(name)
                 found_module_for_lid = True
 
@@ -579,34 +629,39 @@ def LoraSoupsMerge_from_scratch(
 
         # --- Logic to handle both continual and from-scratch merging ---
         num_heads = len(classifier_heads)
-        
+
         if num_heads == 2:
             # CONTINUAL case: Weighted average of old (merged) and new.
             w_old = (current_task - 1) / current_task
             w_new = 1 / current_task
-            log.info(f"Continual classifier merge: Applying weights old={w_old:.3f}, new={w_new:.3f}")
-            
+            log.info(
+                f"Continual classifier merge: Applying weights old={w_old:.3f}, new={w_new:.3f}"
+            )
+
             merged_weight = w_old * weights[0] + w_new * weights[1]
             merged_bias = None
             if biases:
                 merged_bias = w_old * biases[0] + w_new * biases[1]
         else:
             # FROM-SCRATCH case: Uniform average of all heads.
-            log.info(f"From-scratch classifier merge: Uniformly averaging {num_heads} heads.")
-            
+            log.info(
+                f"From-scratch classifier merge: Uniformly averaging {num_heads} heads."
+            )
+
             merged_weight = torch.stack(weights).mean(dim=0)
             merged_bias = None
             if biases:
                 merged_bias = torch.stack(biases).mean(dim=0)
 
         num_classes, hidden_dim = merged_weight.shape
-        clf = nn.Linear(hidden_dim, num_classes,
-                               bias=merged_bias is not None).to(device)
+        clf = nn.Linear(hidden_dim, num_classes, bias=merged_bias is not None).to(
+            device
+        )
         with torch.no_grad():
             clf.weight.copy_(merged_weight)
             if merged_bias is not None:
                 clf.bias.copy_(merged_bias)
-        
+
         pl_model.classifier = clf
         pl_model.classifier.requires_grad_(True)
         trainables.extend(pl_model.classifier.parameters())
@@ -614,19 +669,20 @@ def LoraSoupsMerge_from_scratch(
         # Monkey-patch the forward method
         if not hasattr(pl_model, "_orig_forward"):
             pl_model._orig_forward = pl_model.forward
-        
+
         def _forward_with_classifier(self, x: torch.Tensor) -> torch.Tensor:
             feats = self._orig_forward(x)
             return self.classifier(feats)
+
         pl_model.forward = types.MethodType(_forward_with_classifier, pl_model)
 
     # 5. Setup optimizer and training loop
     # --- START: Add trainable parameter logging ---
-    lora_params = sum(p.alpha.numel() for p in soup_params if hasattr(p, 'alpha'))
+    lora_params = sum(p.alpha.numel() for p in soup_params if hasattr(p, "alpha"))
     cls_params = 0
     if hasattr(pl_model, "classifier"):
         cls_params = sum(p.numel() for p in pl_model.classifier.parameters())
-    
+
     total_params = sum(p.numel() for p in trainables)
 
     log.info(f"[LoraSoupsMerge] Trainable LoRA-merge params : {lora_params:,}")
@@ -637,19 +693,21 @@ def LoraSoupsMerge_from_scratch(
     if not trainables:
         log.warning("No trainable parameters found. Skipping training.")
         num_epochs = 0
-        
+
     optim = torch.optim.Adam(trainables, lr=lr)
     loss_fn = nn.BCEWithLogitsLoss()
 
     for ep in range(num_epochs):
         # ---  Use zip to automatically handle different dataloader lengths ---
-        pbar = tqdm(zip(train_loader_old, train_loader_new),
-                    desc=f"Epoch {ep+1}/{num_epochs}", unit="batch")
+        pbar = tqdm(
+            zip(train_loader_old, train_loader_new),
+            desc=f"Epoch {ep + 1}/{num_epochs}",
+            unit="batch",
+        )
         for batch_old, batch_new in pbar:
-
             x_old, y_old = batch_old
             x_new, y_new = batch_new
-            
+
             x = torch.cat([x_old, x_new]).to(device)
             y = torch.cat([y_old, y_new]).to(device).float()
 
@@ -665,13 +723,15 @@ def LoraSoupsMerge_from_scratch(
     # Only build LoRA weights if there are soup_params to process
     merged_lora = {}
     if soup_params:
-        merged_lora = _merge_lora_weights(layer_ids, soup_params, lora_heads, ranks_are_consistent)
-    
+        merged_lora = _merge_lora_weights(
+            layer_ids, soup_params, lora_heads, ranks_are_consistent
+        )
+
     merged_classifier = {}
     if hasattr(pl_model, "classifier") and isinstance(pl_model.classifier, nn.Linear):
-        merged_classifier['weight'] = pl_model.classifier.weight.detach().cpu()
+        merged_classifier["weight"] = pl_model.classifier.weight.detach().cpu()
         if pl_model.classifier.bias is not None:
-            merged_classifier['bias'] = pl_model.classifier.bias.detach().cpu()
+            merged_classifier["bias"] = pl_model.classifier.bias.detach().cpu()
 
     # 7. Clean up model by baking weights and restoring original state
     _cleanup_and_bake_weights(pl_model)

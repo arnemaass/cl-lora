@@ -1,6 +1,7 @@
 import argparse
 import json
 import logging
+import math
 import os
 import sys
 import time
@@ -11,8 +12,6 @@ import joblib
 import pandas as pd
 import torch
 import yaml
-import math
-
 from sklearn.model_selection import train_test_split
 
 # --- DataSet factory based on configilm / BENv2 ---
@@ -22,13 +21,12 @@ from torch.utils.data import ConcatDataset, DataLoader, Subset
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../baseline")
 # # Import transforms along with other SpectralGPT components
 from SpectralGPT import (
+    # train_transform,
+    # val_transform,
+    SpectralGPTLightningModule,
     eval_model,
     load_model,
-    # train_transform,  
-    # val_transform,    
-    SpectralGPTLightningModule, 
 )
-
 
 from baseline import (
     get_datasets,
@@ -43,28 +41,23 @@ def sample_stratified_subset(dataset, n, seed):
     """Return a stratified Subset of size min(n, len(dataset)) maintaining class proportions."""
     if n >= len(dataset):
         return dataset
-    
+
     # Get all labels
     labels = []
     for i in range(len(dataset)):
         _, label = dataset[i]
         labels.append(label)
-    
+
     indices = list(range(len(dataset)))
     try:
         selected_indices, _ = train_test_split(
-            indices, 
-            train_size=n, 
-            stratify=labels, 
-            random_state=seed
+            indices, train_size=n, stratify=labels, random_state=seed
         )
     except ValueError:  # Fall back to random if stratification fails
         g = torch.Generator().manual_seed(seed)
         selected_indices = torch.randperm(len(dataset), generator=g)[:n].tolist()
-        logging.warning(
-            "Stratified sampling failed, falling back to random sampling."
-        )
-   
+        logging.warning("Stratified sampling failed, falling back to random sampling.")
+
     return Subset(dataset, selected_indices)
 
 
@@ -77,19 +70,19 @@ def load_lora_weights(country: str, base_path: str = None):
     """Load LoRA weights for a specific country."""
     try:
         from safetensors.torch import load_file
-        
+
         if base_path is None:
             base_path = "/faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/saved_models/epoch15/task_tuning"
-        
+
         lora_path = os.path.join(base_path, f"{country}_lora.safetensors")
-        
+
         if os.path.exists(lora_path):
             logging.info(f"Loading LoRA weights from: {lora_path}")
             return load_file(lora_path)
         else:
             logging.warning(f"LoRA weights not found: {lora_path}")
             return None
-            
+
     except (FileNotFoundError, ImportError) as e:
         logging.warning(f"Could not load LoRA weights for {country}: {e}")
         return None
@@ -99,12 +92,12 @@ def load_classifier_weights(country: str, base_path: str = None):
     """Load classifier weights for a specific country."""
     try:
         from safetensors.torch import load_file
-        
+
         if base_path is None:
             base_path = "/faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/saved_models/epoch15/task_tuning"
-        
+
         fc_path = os.path.join(base_path, f"{country}_fc.safetensors")
-        
+
         if os.path.exists(fc_path):
             logging.info(f"Loading classifier weights from: {fc_path}")
             return load_file(fc_path)
@@ -112,7 +105,7 @@ def load_classifier_weights(country: str, base_path: str = None):
             logging.warning(f"Classifier weights not found: {fc_path}")
             print(f"Classifier weights not found: {fc_path}")
             return None
-            
+
     except (FileNotFoundError, ImportError) as e:
         logging.warning(f"Could not load classifier weights for {country}: {e}")
         return None
@@ -124,29 +117,34 @@ def load_weights_for_permutation(countries, permutation, base_path: str = None):
     all_classifier_weights = []
     print(permutation)
     print(countries)
-    
+
     # Load weights according to permutation order
     for country_idx in permutation:
         if country_idx < len(countries):
             country = countries[country_idx]
-            
-            logging.info(f"Loading weights for country: {country} (permutation index: {country_idx})")
-            print(f"Loading weights for country: {country} (permutation index: {country_idx})")
+
+            logging.info(
+                f"Loading weights for country: {country} (permutation index: {country_idx})"
+            )
+            print(
+                f"Loading weights for country: {country} (permutation index: {country_idx})"
+            )
             lora_weights = load_lora_weights(country, base_path)
             classifier_weights = load_classifier_weights(country, base_path)
-            
+
             if lora_weights is not None:
                 all_lora_weights.append(lora_weights)
             else:
                 logging.warning(f"No LoRA weights found for {country}")
                 print("no weights")
-                
+
             if classifier_weights is not None:
                 all_classifier_weights.append(classifier_weights)
             else:
                 logging.warning(f"No classifier weights found for {country}")
-    
+
     return all_lora_weights, all_classifier_weights
+
 
 def sample_subset(dataset, n, seed):
     """Return a Subset of size min(n, len(dataset))."""
@@ -154,13 +152,15 @@ def sample_subset(dataset, n, seed):
     if n >= len(dataset):
         return dataset  # keep the whole set
     g = torch.Generator().manual_seed(seed)  # reproducible
-    idx = torch.randperm(len(dataset), generator=g)[: n]
+    idx = torch.randperm(len(dataset), generator=g)[:n]
 
     return Subset(dataset, idx.tolist())
+
 
 # -------------------------------------------------------------------------
 #  MERGING FUNCTIONS
 # -------------------------------------------------------------------------
+
 
 def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
     """
@@ -212,7 +212,9 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
         train_subset_size = max(1, int(len(train_set)))
         val_subset_size = max(1, int(len(val_set)))
 
-        train_subsets.append(sample_stratified_subset(train_set, train_subset_size, seed + i))
+        train_subsets.append(
+            sample_stratified_subset(train_set, train_subset_size, seed + i)
+        )
         val_subsets.append(sample_stratified_subset(val_set, val_subset_size, seed + i))
 
     save_dir = params.get("save_dir")
@@ -240,17 +242,20 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
     memory_size = params.get("memory_size")  # total budget for old data
     replay_train_sets, replay_val_sets = [], []  # what actually goes into replay
 
-
     # Continual merging loop: start at task 2
     for current_task in range(2, len(permutation) + 1):
         seen_task_indices = permutation[:current_task]
         seen_countries = [countries[i] for i in seen_task_indices]
-        log.info(f"Task {current_task}: Adding {countries[permutation[current_task-1]]} to previous merged model")
+        log.info(
+            f"Task {current_task}: Adding {countries[permutation[current_task - 1]]} to previous merged model"
+        )
 
         if current_task == 2:  # only one old task so far
             share = memory_size
         else:
-            share = math.ceil(memory_size / (current_task - 1))  # equal share per old task
+            share = math.ceil(
+                memory_size / (current_task - 1)
+            )  # equal share per old task
 
         replay_train_sets.clear()
         replay_val_sets.clear()
@@ -262,35 +267,30 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
         val_current = full_val_sets[current_task - 1]
 
         # Get new task weights
-        new_lora_weights = all_lora_weights[current_task-1]
-        new_classifier_weights = all_classifier_weights[current_task-1]
+        new_lora_weights = all_lora_weights[current_task - 1]
+        new_classifier_weights = all_classifier_weights[current_task - 1]
 
         # Create training data for just the new task (for training the merged classifier)
         new_train_loader = DataLoader(
-            train_current,
-            batch_size=batch_size, 
-            shuffle=True, 
-            num_workers=num_workers
+            train_current, batch_size=batch_size, shuffle=True, num_workers=num_workers
         )
         new_val_loader = DataLoader(
-            val_current,
-            batch_size=batch_size, 
-            shuffle=False, 
-            num_workers=num_workers
+            val_current, batch_size=batch_size, shuffle=False, num_workers=num_workers
         )
         old_train_loader = DataLoader(
             ConcatDataset(replay_train_sets),
             batch_size=batch_size,
             shuffle=True,
-            num_workers=num_workers
+            num_workers=num_workers,
         )
-
 
         # Create LightningModule
         if model_module == "SpectralGPT":
             pl_model = SpectralGPTLightningModule(base_model, num_classes=19, lr=lr)
         elif model_module == "SoftCon":
-            pl_model = SpectralGPTLightningModule(base_model, embed_dim=768, num_classes=19, lr=lr)
+            pl_model = SpectralGPTLightningModule(
+                base_model, embed_dim=768, num_classes=19, lr=lr
+            )
         else:
             raise ValueError(f"Unknown model_module: {model_module}")
 
@@ -302,7 +302,9 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
 
             # Merge previous merged weights with new task weights
             lora_heads_to_merge = previous_lora_weights + [new_lora_weights]
-            classifier_heads_to_merge = previous_classifier_weights + [new_classifier_weights]
+            classifier_heads_to_merge = previous_classifier_weights + [
+                new_classifier_weights
+            ]
 
             merged_model, merged_lora, merged_classifier = LoraSoupsMerge_continual(
                 pl_model=pl_model,
@@ -310,10 +312,10 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
                 train_loader_old=old_train_loader,
                 lora_heads=lora_heads_to_merge,
                 classifier_heads=classifier_heads_to_merge,
-                mode='learnable',
+                mode="learnable",
                 num_epochs=epoch,
                 lr=lr,
-                current_task=current_task
+                current_task=current_task,
             )
             # Update previous to be the merged result (this is the key difference!)
             previous_lora_weights = [merged_lora]
@@ -324,7 +326,9 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
 
             # Merge previous merged weights with new task weights
             lora_heads_to_merge = previous_lora_weights + [new_lora_weights]
-            classifier_heads_to_merge = previous_classifier_weights + [new_classifier_weights]
+            classifier_heads_to_merge = previous_classifier_weights + [
+                new_classifier_weights
+            ]
 
             merged_model, merged_lora, merged_classifier = ZipLoRaMerge(
                 pl_model=pl_model,
@@ -335,13 +339,12 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
                 step=current_task,
                 num_epochs=epoch,
                 lr=lr,
-                d_cos=1
+                d_cos=1,
             )
 
             # Update previous to be the merged result (this is the key difference!)
             previous_lora_weights = [merged_lora]
             previous_classifier_weights = [merged_classifier]
-
 
         elif test_type == "LoRAHub":
             # Similar pattern for LoRAHub
@@ -429,12 +432,11 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
         )
         log.info(f"Result: {row}")
 
-
     return pd.DataFrame(results)
 
 
 # -------------------------------------------------------------------------
-# Can only be run for LoraHub and LoraSoups since it merges more then two tasks 
+# Can only be run for LoraHub and LoraSoups since it merges more then two tasks
 # -------------------------------------------------------------------------
 def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame:
     """
@@ -453,7 +455,7 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
     epoch = params.get("epoch", 1)
     lr = float(params.get("lr", 1e-4))
     model_module = params.get("model_module")
-    
+
     # Load full datasets first
     full_train_sets, _ = get_datasets(
         countries,
@@ -502,7 +504,7 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
     all_lora_weights, all_classifier_weights = load_weights_for_permutation(
         countries, permutation, params.get("weight_base_path")
     )
-    
+
     log.info(f"Successfully loaded weights for {len(all_lora_weights)} countries")
 
     # Main loop: start at task 2 and increment
@@ -511,27 +513,31 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
     for current_task_num in range(2, len(permutation) + 1):
         seen_task_indices = permutation[:current_task_num]
         seen_countries = [countries[i] for i in seen_task_indices]
-        log.info(f"Task {current_task_num}: Merging countries {seen_countries} from scratch")
+        log.info(
+            f"Task {current_task_num}: Merging countries {seen_countries} from scratch"
+        )
 
         # --- CORRECTED DATA HANDLING FOR "FROM SCRATCH" ---
         # Pool all data from all tasks seen so far.
         all_seen_data = [train_subsets[i] for i in seen_task_indices]
-        
+
         # The merge functions expect two loaders. We'll pass all data in one
         # and an empty list to the other to create an empty loader.
         combined_train_loader = DataLoader(
             ConcatDataset(all_seen_data),
             batch_size=batch_size,
             shuffle=True,
-            num_workers=num_workers
+            num_workers=num_workers,
         )
-        empty_loader = DataLoader([], batch_size=batch_size) # Empty loader
+        empty_loader = DataLoader([], batch_size=batch_size)  # Empty loader
 
         # Create a fresh LightningModule for each from-scratch merge
         if model_module == "SpectralGPT":
             pl_model = SpectralGPTLightningModule(base_model, num_classes=19, lr=lr)
         elif model_module == "SoftCon":
-            pl_model = SpectralGPTLightningModule(base_model, embed_dim=768, num_classes=19, lr=lr)
+            pl_model = SpectralGPTLightningModule(
+                base_model, embed_dim=768, num_classes=19, lr=lr
+            )
         else:
             raise ValueError(f"Unknown model_module: {model_module}")
 
@@ -540,35 +546,37 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
 
         # Get the original weights for all current tasks
         lora_heads_to_merge = [all_lora_weights[i] for i in seen_task_indices]
-        classifier_heads_to_merge = [all_classifier_weights[i] for i in seen_task_indices]
+        classifier_heads_to_merge = [
+            all_classifier_weights[i] for i in seen_task_indices
+        ]
 
         if test_type == "LoRASoups":
             from LoRASoups import LoraSoupsMerge_from_scratch
 
             merged_model, merged_lora, merged_classifier = LoraSoupsMerge_from_scratch(
                 pl_model=pl_model,
-                train_loader_old=combined_train_loader, # All data here
-                train_loader_new=empty_loader,         # Empty loader here
+                train_loader_old=combined_train_loader,  # All data here
+                train_loader_new=empty_loader,  # Empty loader here
                 lora_heads=lora_heads_to_merge,
                 classifier_heads=classifier_heads_to_merge,
-                mode='learnable',
+                mode="learnable",
                 num_epochs=epoch,
                 lr=lr,
-                current_task=current_task_num
+                current_task=current_task_num,
             )
         elif test_type == "ZipLoRA":
             from ziplora import ZipLoRaMerge
 
             merged_model, merged_lora, merged_classifier = ZipLoRaMerge(
                 pl_model=pl_model,
-                train_loader_old=combined_train_loader, # All data here
-                train_loader_new=empty_loader,         # Empty loader here
+                train_loader_old=combined_train_loader,  # All data here
+                train_loader_new=empty_loader,  # Empty loader here
                 lora_heads=lora_heads_to_merge,
                 classifier_heads=classifier_heads_to_merge,
                 step=current_task_num,
                 num_epochs=epoch,
                 lr=lr,
-                d_cos=1
+                d_cos=1,
             )
         elif test_type == "LoRAHub":
             # Add LoRAHub implementation
@@ -633,7 +641,6 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
         )
         log.info(f"Result: {row}")
 
-
     return pd.DataFrame(results)
 
 
@@ -649,29 +656,30 @@ def main_from_config(config_path: str) -> pd.DataFrame:
             if config_path.endswith((".yml", ".yaml"))
             else json.load(f)
         )
-    
+
     from importlib import import_module
 
     # Dynamically import the specified module
     model_module_name = cfg.get("model_module", "SpectralGPT")
     logging.info(f"Using model module: {model_module_name}")
-    
+
     try:
         model_module = import_module(model_module_name)
-        
+
         # Import everything from the module into the global namespace
         for name in dir(model_module):
             if not name.startswith("_"):
                 globals()[name] = getattr(model_module, name)
-        
+
         # Also make transforms available for baseline imports
-        if hasattr(model_module, 'train_transform'):
+        if hasattr(model_module, "train_transform"):
             import builtins
+
             builtins.train_transform = model_module.train_transform
             builtins.val_transform = model_module.val_transform
-            
+
         logging.info(f"Successfully imported {model_module_name} module")
-        
+
     except ImportError as e:
         logging.error(f"Failed to import {model_module_name}: {e}")
         raise
@@ -695,14 +703,15 @@ def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
     """
     # Determine which merging approach to use based on config or params
     merging_approach = params.get("merging_approach", "from_scratch")
-    
+
     if merging_approach == "continual":
         return test_continual_merging(test_type, params)
     elif merging_approach == "from_scratch":
         return test_merging_from_scratch(test_type, params)
     else:
-        raise ValueError(f"Unknown merging_approach: {merging_approach}. Use 'continual' or 'from_scratch'")
-
+        raise ValueError(
+            f"Unknown merging_approach: {merging_approach}. Use 'continual' or 'from_scratch'"
+        )
 
 
 # Setup logging
@@ -711,6 +720,7 @@ def setup_logging():
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
     )
     logging.info("Logger initialized")
+
 
 # setup logging and parse command line arguments
 def main():
@@ -726,6 +736,7 @@ def main():
         logging.info("Config file contents:\n%s", f.read())
 
     print(main_from_config(args.config))
+
 
 # def main():
 #     setup_logging()
@@ -753,12 +764,12 @@ def main():
 #         }
 #     }
 #     logging.info("Using temporary debug configuration.")
-    
+
 #     # Manually call the core logic from main_from_config
 #     test_type = config["test_type"]
 #     params = config["params"]
 #     params["model_module"] = config["model_module"]
-    
+
 #     results = test_merging(test_type, params)
 #     print(results)
 
