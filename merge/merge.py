@@ -348,7 +348,26 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
 
         elif test_type == "LoRAHub":
             # Similar pattern for LoRAHub
-            pass
+            from lorahub.lorahub_learning import LoraHubMerge_continual
+            lora_heads_to_merge = previous_lora_weights + [new_lora_weights]
+            classifier_heads_to_merge = previous_classifier_weights + [
+                new_classifier_weights
+            ]
+            
+            
+            merged_model, merged_lora, merged_classifier = LoraHubMerge_continual(
+                pl_model=pl_model,
+                train_loader_new=new_train_loader,  # Train on new task data
+                train_loader_old=old_train_loader,
+                lora_heads=lora_heads_to_merge,
+                classifier_heads=classifier_heads_to_merge,
+                num_epochs=epoch,
+                lr=lr,
+                current_task=current_task,
+            )
+            
+            previous_lora_weights = [merged_lora]
+            previous_classifier_weights = [merged_classifier]
         else:
             raise ValueError(f"Unknown test_type: {test_type}")
 

@@ -142,11 +142,17 @@ def get_datasets(
     seed: int = 0,
     frac=0.8,
     model_module=None,  # Specify the model module
+    use_saved_datasets: bool = False,  # New parameter
+    saved_datasets_dir: str = '~/saved_datasets'  # New parameter
 ) -> Tuple[List[BENv2DataSet], List[BENv2DataSet]]:
     """
     Dynamically load datasets for the specified countries and permutation.
     Adjusts img_size based on the model_module.
     """
+    if use_saved_datasets:
+    # Import the loader only when needed
+        from saved_dataset_loader import load_country_datasets
+        return load_country_datasets(countries, saved_datasets_dir)
     train_datasets: List[BENv2DataSet] = []
     val_datasets: List[BENv2DataSet] = []
 
