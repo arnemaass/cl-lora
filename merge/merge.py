@@ -348,7 +348,26 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
 
         elif test_type == "LoRAHub":
             # Similar pattern for LoRAHub
-            pass
+            from lorahub.lorahub_learning import LoraHubMerge_continual
+            lora_heads_to_merge = previous_lora_weights + [new_lora_weights]
+            classifier_heads_to_merge = previous_classifier_weights + [
+                new_classifier_weights
+            ]
+            
+            
+            merged_model, merged_lora, merged_classifier = LoraHubMerge_continual(
+                pl_model=pl_model,
+                train_loader_new=new_train_loader,  # Train on new task data
+                train_loader_old=old_train_loader,
+                lora_heads=lora_heads_to_merge,
+                classifier_heads=classifier_heads_to_merge,
+                num_epochs=epoch,
+                lr=lr,
+                current_task=current_task,
+            )
+            
+            previous_lora_weights = [merged_lora]
+            previous_classifier_weights = [merged_classifier]
         else:
             raise ValueError(f"Unknown test_type: {test_type}")
 
@@ -484,9 +503,11 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
     # Create stratified subsets for every original task
     train_subsets = []
     for i, train_set in enumerate(full_train_sets):
-        subset_size = max(1, int(len(train_set) * subset_fraction))
-        train_subsets.append(sample_stratified_subset(train_set, subset_size, seed + i))
-        log.info(f"Task {i + 1} subset size: {subset_size}/{len(train_set)}")
+        # subset_size = max(1, int(len(train_set) * subset_fraction))
+        # train_subsets.append(sample_stratified_subset(train_set, subset_size, seed + i))
+        # log.info(f"Task {i + 1} subset size: {subset_size}/{len(train_set)}")
+        train_subsets.append(train_set)
+        log.info(f"Task {i + 1} using full train set with size: {len(train_set)}")
 
     save_dir = params.get("save_dir")
     if save_dir:
@@ -529,7 +550,7 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
             shuffle=True,
             num_workers=num_workers,
         )
-        empty_loader = DataLoader([], batch_size=batch_size)  # Empty loader
+        # empty_loader = DataLoader([], batch_size=batch_size)  # Empty loader
 
         # Create a fresh LightningModule for each from-scratch merge
         if model_module == "SpectralGPT":
@@ -555,8 +576,7 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
 
             merged_model, merged_lora, merged_classifier = LoraSoupsMerge_from_scratch(
                 pl_model=pl_model,
-                train_loader_old=combined_train_loader,  # All data here
-                train_loader_new=empty_loader,  # Empty loader here
+                train_loader=combined_train_loader,  # Pass all data in one loader
                 lora_heads=lora_heads_to_merge,
                 classifier_heads=classifier_heads_to_merge,
                 mode="learnable",
@@ -569,7 +589,7 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
 
             merged_model, merged_lora, merged_classifier = ZipLoRaMerge(
                 pl_model=pl_model,
-                train_loader_old=combined_train_loader,  # All data here
+                train_loader_old=combined_train_loader,  # All data
                 train_loader_new=empty_loader,  # Empty loader here
                 lora_heads=lora_heads_to_merge,
                 classifier_heads=classifier_heads_to_merge,
