@@ -1,6 +1,11 @@
 # cl-lora
 
+## Requirements
 
+python=3.11.9
+```bash
+pip install -r requirements.txt
+```
 
 ## Baseline
 
@@ -69,3 +74,7 @@ or run with slurm
 ```bash
 sbatch run_merge.slurm
 ```
+
+## Run on a different machine
+
+Refer to mobility_setup.md
