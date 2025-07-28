@@ -1,25 +1,7 @@
 
 
 """
-algorithms_vit.py
-LoRAHub / LoRASoups utilities rewritten for vision-transformer + SpectralGPT.
-
-Key ideas
----------
-1.  All model-family specifics (loading, data prep, loss, LoRA state handling)
-    live in a small “backend” object.  Anything in the old code that hard-coded
-    AutoModelForSeq2SeqLM / tokenizer is now delegated to that backend.
-
-2.  For SpectralGPT we implement such a backend with:
-      •  load_base_model()          -> Spectral ViT w/o LoRA
-      •  load_lora_adapter(path)    -> returns LoRA state_dict (only A/B)
-      •  extract_lora_state(model)  -> grab A/B from current model
-      •  inject_lora_state(model, sd) -> write A/B into model in-place
-      •  collate(batch) / loss_fn    -> BCE-with-logits on 19 labels
-
-3.  If you later want another backbone (e.g. a different remote-sensing model),
-    just implement another backend with the same interface and pass it in.
-
+LoRAHub rewritten for vision-transformer + SpectralGPT.
 Dependencies
 ------------
 •  torch, torchvision, datasets, nevergrad  (same as before)
@@ -55,6 +37,16 @@ def _linear_merge(
     weights: Sequence[float],
     lora_heads: Sequence[Dict[str, torch.Tensor]],
 ) -> Dict[str, torch.Tensor]:
+    """
+    Perform linear merging of multiple LoRA heads with given weights.
+    
+    Args:
+        weights: List of weights for each LoRA head
+        lora_heads: List of LoRA state dictionaries (A/B matrices)
+    
+    Returns:
+        Merged LoRA state dictionary
+    """
     out: Dict[str, torch.Tensor] = {}
     keys = lora_heads[0].keys()
     for i, head in enumerate(lora_heads):
@@ -62,10 +54,18 @@ def _linear_merge(
             out[k] = out.get(k, 0) + weights[i] * head[k]
     return out
 
-#TODO: image
 def default_get_loss(train_dataloader, model, batch_size):
     """
-    Get the loss of the model on the example dataset. Usually the example dataset only contains a few examples.
+    Calculate the loss of the model on the training dataset.
+    This function computes the average loss over all batches in the dataloader.
+    
+    Args:
+        train_dataloader: DataLoader containing training data
+        model: The model to evaluate
+        batch_size: Size of each batch
+    
+    Returns:
+        Average loss value as float
     """
     device = "cuda" if torch.cuda.is_available() else "cpu"
     train_loss = torch.tensor(0.0, device=device)
@@ -101,8 +101,24 @@ def default_get_loss(train_dataloader, model, batch_size):
     return avg_loss
 
 
-
 def get_score(weights, model, cache, classifier, dataloader, batch_size, get_loss, get_regular):
+    """
+    Calculate the optimization score for given LoRA weights.
+    This function combines the model loss with regularization to form the objective function.
+    
+    Args:
+        weights: Current weights for LoRA heads
+        model: The base model with LoRA adapters
+        cache: Dictionary containing LoRA state dictionaries
+        classifier: Classification head
+        dataloader: DataLoader for evaluation
+        batch_size: Size of each batch
+        get_loss: Function to compute loss
+        get_regular: Function to compute regularization term
+    
+    Returns:
+        Combined score (loss + regularization)
+    """
     device = "cuda" if torch.cuda.is_available() else "cpu"
     # the composed lora state dict
     final_state_dict = {}
@@ -136,17 +152,33 @@ def get_score(weights, model, cache, classifier, dataloader, batch_size, get_los
     return metric_val
 
 
-# TODO: doublecheck
 def default_l1_regularization(weights):
     """
-    Get the L1 regularization term for the weights
+    Calculate L1 regularization term for the weights.
+    This helps prevent overfitting by penalizing large weight values.
+    
+    Args:
+        weights: List of LoRA weights
+    
+    Returns:
+        L1 regularization value
     """
     sum_of_squares = sum([abs(x) for x in weights]) / len(weights)
     return 0.05 * sum_of_squares
 
-# TODO
 
 def get_final_weights(weights, lora_heads: List[Dict[str, torch.Tensor]], cache):
+    """
+    Generate the final merged LoRA state dictionary using optimized weights.
+    
+    Args:
+        weights: Optimized weights for each LoRA head
+        lora_heads: List of LoRA state dictionaries
+        cache: Dictionary containing LoRA state dictionaries
+    
+    Returns:
+        Final merged LoRA state dictionary
+    """
     final_state_dict = {}
     keys = cache[0].keys()
     for i, peft_sd in enumerate(lora_heads):
@@ -162,7 +194,7 @@ def get_final_weights(weights, lora_heads: List[Dict[str, torch.Tensor]], cache)
     return final_state_dict
 
 # ----------------------------------------------------------------------------
-#  3.  Optimisation driver  (backend-agnostic)
+#  Optimization steps to call from main
 # ----------------------------------------------------------------------------
 def lora_hub_learn(
     train_loader: Iterable,
@@ -175,6 +207,29 @@ def lora_hub_learn(
     get_loss=default_get_loss, 
     get_regular=default_l1_regularization,
 ):
+    """
+    Main function to learn optimal LoRA weight combinations using gradient-free optimization.
+    
+    This function implements the LoRAHub algorithm which:
+    1. Takes multiple pre-trained LoRA adapters
+    2. Uses Nevergrad to find optimal weight combinations
+    3. Merges the LoRA adapters with learned weights
+    4. Returns the final merged model
+    
+    Args:
+        train_loader: DataLoader for training data
+        lora_heads: List of LoRA state dictionaries to merge
+        LoRA_ViT_model: Base Vision Transformer model
+        classifier: Classification head
+        max_steps: Maximum optimization steps
+        batch_size: Batch size for evaluation
+        seed: Random seed for reproducibility
+        get_loss: Function to compute loss (default: default_get_loss)
+        get_regular: Function to compute regularization (default: default_l1_regularization)
+    
+    Returns:
+        Tuple of (merged_model, final_lora_state_dict)
+    """
     device = "cuda" if torch.cuda.is_available() else "cpu"
     random.seed(seed)
     np.random.seed(seed)
@@ -187,19 +242,15 @@ def lora_hub_learn(
     # Move LoRA heads to device
     lora_heads = [{k: v.to(device) for k, v in head.items()} for head in lora_heads]
     number_of_loras = len(lora_heads)
-    # ------------------------------------------------------------------
-    # 3.1  Prepare model + cache adapter states
-    # ------------------------------------------------------------------
 
     # Provided: lora_heads
     # load_peft_models shall return: model, cache
     # model contains the current base_model + current LoRA adapters
-    # cach contains the current base_model + different LoRA adapters
+    # cache contains the current base_model + different LoRA adapters
     peft_model, cache = load_peft_models(lora_heads, LoRA_ViT_model)
 
-    # ------------------------------------------------------------------
-    # 3.2  Build data set + loss closure
-    # ------------------------------------------------------------------
+
+    # Create partial function for optimization objective
     get_score_partial = partial(get_score, 
                                 model=peft_model, 
                                 cache=cache,
@@ -208,23 +259,25 @@ def lora_hub_learn(
                                 batch_size=batch_size,
                                 get_loss=get_loss, 
                                 get_regular=get_regular)
-    # ------------------------------------------------------------------
-    # 3.3  Nevergrad search
-    # ------------------------------------------------------------------
+    
+
+    # Nevergrad optimization
+    # Define parameter space for optimization
     instrum = ng.p.Array(
-        init=[0.0] * number_of_loras,
-        upper=[1.5] * number_of_loras,
-        lower=[-1.5] * number_of_loras,
+        init=[0.0] * number_of_loras,  # Initialize all weights to 0
+        upper=[1.5] * number_of_loras,  # Upper bound for weights
+        lower=[-1.5] * number_of_loras,  # Lower bound for weights
     )
     optimizer = ng.optimizers.NGOpt(parametrization=instrum, budget=max_steps)
     print("> Begin to perform gradient-free optimization ...")
     optimizer.register_callback("tell", ng.callbacks.ProgressBar())
     recommendation = optimizer.minimize(get_score_partial, verbosity=1)
-    # TODO: final lora
+    
+    # Generate final merged LoRA state dictionary
     final_lora = get_final_weights(recommendation.value, lora_heads, cache)
 
     # ------------------------------------------------------------------
-    # 3.4  Finalise merged model
+    # Finalize merged model
     # ------------------------------------------------------------------
     set_peft_model_state_dict(peft_model, final_lora)
     peft_model = peft_model.merge_and_unload()

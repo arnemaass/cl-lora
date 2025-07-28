@@ -27,7 +27,7 @@ params:
   # DataLoader-Parameter
   batch_size: 16                        # Reduced for testing with small samples
   num_workers: 4
-  epoch: 60
+  epoch: 15
   lr: 1e-4                              # Changed to match merge.py default (1e-4, not 1e-3)
 
   # Continual Learning Parameters

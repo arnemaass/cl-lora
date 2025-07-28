@@ -1,3 +1,27 @@
+"""
+SpectralGPT.py
+SpectralGPT model implementation for remote sensing image classification.
+
+This module provides:
+1. SpectralGPT model loading and initialization with LoRA support
+2. PyTorch Lightning training framework
+3. Model evaluation with multi-label classification metrics
+4. Data preprocessing and augmentation transforms
+5. Pre-trained weight loading and fine-tuning capabilities
+
+The module supports:
+- Vision Transformer (ViT) backbone with LoRA adaptation
+- Multi-label classification (19 classes)
+- Continual learning with replay mechanisms
+- Comprehensive evaluation metrics (accuracy, micro/macro AP)
+
+Dependencies
+------------
+• torch, pytorch_lightning, torchvision
+• numpy, sklearn, random
+• Custom model modules (video_vit, lora_vit)
+"""
+
 import random
 import warnings
 
@@ -10,16 +34,18 @@ from sklearn.metrics import average_precision_score
 from torchvision import transforms
 from typing import Dict, Any
 
-# at the top of your script/notebook
+# Suppress sklearn warnings for undefined metrics
 warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
 
 import os
 from datetime import datetime
 
+# Setup logging and file paths
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 log_file = f"train_log_{timestamp}.csv"
 first_time = not os.path.exists(log_file)
 
+# Pre-trained model paths
 dir_pretrained = "/faststorage/SpectralGPT/SpectralGPT.pth"
 dir_pretrained_plus = "/faststorage/SpectralGPT/S+/SpectralGPT+.pth"
 dir_output = "./weights/"
@@ -35,25 +61,36 @@ torch.cuda.manual_seed_all(seed)
 generator = torch.Generator().manual_seed(seed)
 
 
-
 from model.video_vit import vit_base_patch8_128
 from utils.pos_embed import interpolate_pos_embed
 
-# Use environment variable or relative path
-
 
 def load_mae_encoder(model, ckpt_path):
+    """
+    Load pre-trained MAE encoder weights into the model.
+    
+    This function handles loading pre-trained weights from a MAE (Masked Autoencoder)
+    checkpoint, removing decoder components and handling shape mismatches.
+    
+    Args:
+        model: The target model to load weights into
+        ckpt_path: Path to the pre-trained checkpoint file
+    
+    Returns:
+        model: Model with loaded pre-trained weights
+    """
     state_dict = model.state_dict()
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     ckpt_model = ckpt.get("model", ckpt)
-    # remove decoder & mask
+    
+    # Remove decoder & mask components (keep only encoder)
     ckpt_model = {
         k: v
         for k, v in ckpt_model.items()
         if not (k.startswith("decoder") or k.startswith("mask_token"))
     }
 
-    # Delete mismatch (inherited from MAE)
+    # Delete mismatched keys inherited from MAE
     for k in [
         "patch_embed.0.proj.weight",
         "patch_embed.1.proj.weight",
@@ -65,34 +102,46 @@ def load_mae_encoder(model, ckpt_path):
         if k in ckpt_model and ckpt_model[k].shape != state_dict[k].shape:
             print(f"Removing key {k} from pretrained checkpoint")
             del ckpt_model[k]
-    # Delete head (embed_size, 10) for downstream 19-class classification
-    # pos_embed interpolation
+    
+    # Delete head for downstream 19-class classification
+    # Interpolate positional embeddings if needed
     if "pos_embed_spatial" in ckpt_model:
         interpolate_pos_embed(model, ckpt_model)
 
-    # strict=False to ignore missing head.weight/bias
+    # Load state dict with strict=False to ignore missing head.weight/bias
     msg = model.load_state_dict(ckpt_model, strict=False)
     print("Loaded with:", msg)
-    # msg.missing_keys:     head.weight/bias；
+    # msg.missing_keys:     head.weight/bias
     # msg.unexpected_keys:  empty
     return model
 
 
-def load_model(r = 4, use_lora: bool = True):
+def load_model(r=4, use_lora: bool = True):
     """
-    Load the model with the specified LoRA rank (r) and other parameters.
+    Load the SpectralGPT model with optional LoRA adaptation.
+    
+    This function initializes a Vision Transformer model, loads pre-trained weights,
+    and optionally wraps it with LoRA for efficient fine-tuning.
+    
+    Args:
+        r: LoRA rank (reduction factor for low-rank adaptation)
+        use_lora: Whether to apply LoRA adaptation to the model
+    
+    Returns:
+        model: Loaded model (with or without LoRA)
     """
     # --- Model setup ---
-    # Load pretrained weights
+    # Initialize base ViT model
     model = vit_base_patch8_128(sep_pos_embed=True, num_classes=19)
     model = load_mae_encoder(model, dir_pretrained)
 
+    # Print trainable parameters count
     num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(
         f"ViT trainable parameters w/o LoRA: {num_params}"
     )  # trainable parameters: 86859496
 
-    if use_lora:  # Wrap with LoRA
+    if use_lora:  # Wrap with LoRA for efficient adaptation
         from model.lora_vit import LoRA_SViT
 
         lora_model = LoRA_SViT(model, r=r, alpha=16, num_classes=19)
@@ -117,17 +166,46 @@ def load_model(r = 4, use_lora: bool = True):
 
 # --- Lightning Module --- 
 class SpectralGPTLightningModule(L.LightningModule):
+    """
+    PyTorch Lightning module for SpectralGPT training.
+    
+    This class provides a complete training framework with:
+    - Forward pass implementation
+    - Training and validation steps
+    - Loss computation and metrics logging
+    - Optimizer and learning rate scheduler configuration
+    """
+    
     def __init__(self, model, num_classes, lr=1e-4):
+        """
+        Initialize the Lightning module.
+        
+        Args:
+            model: The SpectralGPT model
+            num_classes: Number of output classes (19 for multi-label)
+            lr: Learning rate for optimization
+        """
         super().__init__()
         self.model = model
-        self.criterion = nn.BCEWithLogitsLoss()
+        self.criterion = nn.BCEWithLogitsLoss()  # Binary cross-entropy for multi-label
         self.lr = lr
         self.num_classes = num_classes
 
     def forward(self, x):
+        """Forward pass through the model."""
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
+        """
+        Training step implementation.
+        
+        Args:
+            batch: Input batch (images, labels)
+            batch_idx: Batch index
+        
+        Returns:
+            loss: Training loss
+        """
         imgs, labels = batch
         outputs = self(imgs)
         loss = self.criterion(outputs, labels.float())
@@ -138,6 +216,13 @@ class SpectralGPTLightningModule(L.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
+        """
+        Validation step implementation.
+        
+        Args:
+            batch: Input batch (images, labels)
+            batch_idx: Batch index
+        """
         imgs, labels = batch
         outputs = self(imgs)
         loss = self.criterion(outputs, labels.float())
@@ -147,6 +232,12 @@ class SpectralGPTLightningModule(L.LightningModule):
         self.log("val_acc", acc, prog_bar=True)
 
     def configure_optimizers(self):
+        """
+        Configure optimizer and learning rate scheduler.
+        
+        Returns:
+            dict: Optimizer and scheduler configuration
+        """
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer,
@@ -164,13 +255,29 @@ class SpectralGPTLightningModule(L.LightningModule):
         }
 
 
-# --- Wrap train_model_replay with Lightning ---
+# --- Training function ---
 def train_model(lora_model, train_loader, val_loader, epochs=25, lr=1e-4):
     """
     Train the SpectralGPT model using PyTorch Lightning.
+    
+    This function provides a complete training pipeline with:
+    - Lightning module wrapping
+    - Automatic GPU/CPU detection
+    - Model checkpointing and logging
+    - Training progress monitoring
+    
+    Args:
+        lora_model: The LoRA-adapted SpectralGPT model
+        train_loader: Training data loader
+        val_loader: Validation data loader
+        epochs: Number of training epochs
+        lr: Learning rate
+    
+    Returns:
+        pl_model: Trained PyTorch Lightning model
     """
     # Wrap the model in a LightningModule
-    num_classes = 19  # Update this based on your dataset
+    num_classes = 19  # Multi-label classification
     pl_model = SpectralGPTLightningModule(lora_model, num_classes=num_classes, lr=lr)
 
     # Define PyTorch Lightning Trainer
@@ -193,6 +300,19 @@ def train_model(lora_model, train_loader, val_loader, epochs=25, lr=1e-4):
 
 
 def eval_model(lora_model, test_loader):
+    """
+    Evaluate the SpectralGPT model on test data.
+    
+    This function computes comprehensive evaluation metrics for multi-label
+    classification including accuracy, micro-average precision, and macro-average precision.
+    
+    Args:
+        lora_model: The trained SpectralGPT model
+        test_loader: Test data loader
+    
+    Returns:
+        dict: Dictionary containing evaluation metrics
+    """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     lora_model.to(device)
     lora_model.eval()
@@ -206,28 +326,28 @@ def eval_model(lora_model, test_loader):
         for imgs, labels in test_loader:
             imgs, labels = imgs.to(device), labels.to(device).float()
 
-            # forward
+            # Forward pass
             outputs = lora_model(imgs)  # raw logits, shape [B, C]
             probs = torch.sigmoid(outputs)  # probabilities [0,1]
 
-            # accumulate for AP computation
+            # Accumulate for AP computation
             all_scores.append(probs.cpu())
             all_labels.append(labels.cpu())
 
-            # for accuracy
+            # Calculate accuracy
             preds = (probs > 0.5).float()
             val_correct += (preds == labels).sum().item()
             val_total += labels.numel()
 
-    # stack everything
+    # Stack all predictions and labels
     all_scores = torch.cat(all_scores, dim=0).numpy()  # shape [N, C]
     all_labels = torch.cat(all_labels, dim=0).numpy()  # shape [N, C]
 
-    # average-precision scores
+    # Calculate average precision scores
     micro_ap = average_precision_score(all_labels, all_scores, average="micro")
     macro_ap = average_precision_score(all_labels, all_scores, average="macro")
 
-    # accuracy
+    # Calculate overall accuracy
     val_acc = 100.0 * val_correct / val_total
 
     return {"micro_ap": micro_ap, "macro_ap": macro_ap, "accuracy": val_acc}
@@ -235,13 +355,34 @@ def eval_model(lora_model, test_loader):
 
 # --- Data preprocessing functions ---
 class NormalizeWithStats:
-    """SOFTCON normalization with S2A statistics"""
+    """
+    Custom normalization transform using SOFTCON statistics.
+    
+    This transform applies standard normalization using pre-computed
+    mean and standard deviation values for S2A (Sentinel-2) data.
+    """
 
     def __init__(self, mean, std):
+        """
+        Initialize normalization transform.
+        
+        Args:
+            mean: Mean values for each channel
+            std: Standard deviation values for each channel
+        """
         self.mean = np.array(mean, dtype=np.float32).reshape(-1, 1, 1)
         self.std = np.array(std, dtype=np.float32).reshape(-1, 1, 1)
 
     def __call__(self, img):
+        """
+        Apply normalization to input image.
+        
+        Args:
+            img: Input image tensor
+        
+        Returns:
+            torch.Tensor: Normalized image tensor
+        """
         img_np = img.numpy().astype(np.float32)
         # Standard normalization: (x - mean) / std
         img_np = (img_np - self.mean) / self.std
@@ -249,11 +390,28 @@ class NormalizeWithStats:
 
 
 class SelectChannels:
+    """
+    Channel selection transform for Sentinel-2 data.
+    
+    This transform selects specific channels from the input image,
+    typically used to focus on relevant spectral bands for classification.
+    """
+    
     def __call__(self, img):
-        # img is a torch.Tensor [C, H, W]
+        """
+        Select specific channels from input image.
+        
+        Args:
+            img: Input image tensor [C, H, W]
+        
+        Returns:
+            torch.Tensor: Image with selected channels
+        """
+        # Select channels 2-13 (specific spectral bands) to align the channels of SpectralGPT and BENv2
         return img[[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], :, :]
 
 
+# Pre-computed normalization statistics for S2A data
 train_mean = [
     1370.19151926,
     1184.3824625,
@@ -283,10 +441,11 @@ train_std = [
     1087.6020813,
 ]
 
+# Training data augmentation pipeline
 train_transform = transforms.Compose(
     [
-        transforms.Resize((128, 128)),
-        SelectChannels(),
+        transforms.Resize((128, 128)),  # Resize to standard size
+        SelectChannels(),  # Select relevant spectral bands
         transforms.RandomHorizontalFlip(),  # Random horizontal flip
         transforms.RandomVerticalFlip(),  # Random vertical flip
         transforms.RandomChoice(
@@ -301,15 +460,16 @@ train_transform = transforms.Compose(
             size=(128, 128),
             scale=(0.8, 1.0),
             interpolation=transforms.InterpolationMode.BICUBIC,
-        ),  # Random resized crop
-        NormalizeWithStats(train_mean, train_std),
+        ),  # Random resized crop for additional augmentation
+        NormalizeWithStats(train_mean, train_std),  # Apply normalization
     ]
 )
 
+# Validation data preprocessing pipeline (no augmentation)
 val_transform = transforms.Compose(
     [
-        transforms.Resize((128, 128)),
-        SelectChannels(),
-        NormalizeWithStats(train_mean, train_std),
+        transforms.Resize((128, 128)),  # Resize to standard size
+        SelectChannels(),  # Select relevant spectral bands
+        NormalizeWithStats(train_mean, train_std),  # Apply normalization
     ]
 )
