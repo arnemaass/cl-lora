@@ -169,7 +169,7 @@ def lora_hub_learn(
     lora_heads: List[Dict[str, torch.Tensor]],
     LoRA_ViT_model: torch.nn.Module,
     classifier: torch.nn.Module,
-    max_steps: int = 1,
+    max_steps: int = 10,
     batch_size: int = 16,
     seed: int = 42,
     get_loss=default_get_loss, 

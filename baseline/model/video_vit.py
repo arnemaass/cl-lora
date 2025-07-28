@@ -278,7 +278,7 @@ class PatchEmbed(nn.Module):
     def forward(self, x):
 
         B, C, T, H, W = x.shape  #2,1,10,512,512
-        print(f"Input shape: {x.shape}")
+        #print(f"Input shape: {x.shape}")
         assert (
             H == self.img_size[0] and W == self.img_size[1]
         ), f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."

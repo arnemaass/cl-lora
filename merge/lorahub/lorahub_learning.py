@@ -112,7 +112,7 @@ def LoraHubMerge_continual(
 
     full_ds = train_loader_old.dataset 
     n_total = len(full_ds)
-    k = n_total // 10 
+    k = n_total
     g = torch.Generator().manual_seed(42)
     indices = torch.randperm(n_total, generator=g)[:k]
     sub_ds = Subset(full_ds, indices.tolist())

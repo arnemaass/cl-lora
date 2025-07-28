@@ -191,6 +191,8 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
         seed=seed,
         frac=0.9,
         model_module=model_module,
+        use_saved_datasets=params.get("use_saved_datasets", False),
+        saved_datasets_dir=params.get("saved_datasets_dir", "~/saved_datasets"),
     )
 
     test_sets, _ = get_datasets(
@@ -203,6 +205,8 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
         seed=seed,
         frac=1,
         model_module=model_module,
+        use_saved_datasets=params.get("use_saved_datasets", False),
+        saved_datasets_dir=params.get("saved_datasets_dir", "~/saved_datasets"),
     )
 
     # Create stratified subsets (same as from_scratch)
