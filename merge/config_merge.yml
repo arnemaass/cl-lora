@@ -1,7 +1,7 @@
 # Konfigurationsdatei für Continual-Learning-Merging
 
 # Test-Typ: ZipLoRA , LoRASoups or LoRAHub
-test_type: LoRASoups
+test_type: LoRAHub
 
 # Modell-Definition
 model_module: SpectralGPT  # Options: 'SpectralGPT' or 'SoftCon'
@@ -20,22 +20,25 @@ params:
   subset_fraction: 0.1                         
 
   # Anzahl der zufällig gezogenen Samples pro Land
-  train_samples: 50 #22482
-  test_samples: 10 #8176
+  train_samples: 5000 #22482
+  test_samples: 500 #8176
   seed: 42                              # Seed für Reproduzierbarkeit
 
   # DataLoader-Parameter
   batch_size: 16                        # Reduced for testing with small samples
   num_workers: 4
-  epoch: 1
+  epoch: 60
   lr: 1e-4                              # Changed to match merge.py default (1e-4, not 1e-3)
 
   # Continual Learning Parameters
-  memory_size: 50   
+  memory_size: 500  
 
   # Bildgröße und Filteroptionen
   include_snowy: false
   include_cloudy: false
+
+  use_saved_datasets: false
+  saved_datasets_dir: "/root/autodl-tmp/saved_datasets"
 
   save_dir: ./saved_models                # Verzeichnis zum Speichern der Modelle
   weight_base_path: "/faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/saved_models/epoch20/task_tuning"
