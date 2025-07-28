@@ -1,0 +1,2110 @@
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/timm/models/layers/__init__.py:48: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+2025-07-13 13:00:45,335 INFO Logger initialized
+2025-07-13 13:00:45,335 INFO Config path: config_merge.yml
+2025-07-13 13:00:45,335 INFO Config file contents:
+# Konfigurationsdatei für Continual-Learning-Merging
+
+# Test-Typ: ZipLoRA , LoRASoups or LoRAHub
+test_type: LoRASoups
+
+# Modell-Definition
+model_module: SpectralGPT  # Options: 'SpectralGPT' or 'SoftCon'
+
+# Parameter für die Tests
+params:
+  merging_approach: continual  # Merging approach: 'continual' or 'from_scratch'
+  countries:
+    - Finland
+    - Ireland
+    - Serbia
+    - Portugal
+  permutation: [0, 1, 2, 3]                # Reihenfolge der Länder-Indices
+
+  # Subset fraction for stratified sampling (5-10% as mentioned in merge.py)
+  subset_fraction: 0.1                         
+
+  # Anzahl der zufällig gezogenen Samples pro Land
+  train_samples: 500 #22482
+  test_samples: 500 #8176
+  seed: 42                              # Seed für Reproduzierbarkeit
+
+  # DataLoader-Parameter
+  
+  batch_size: 8                        # Reduced for testing with small samples
+  num_workers: 4
+  epoch: 1
+  lr: 1e-4                              # Changed to match merge.py default (1e-4, not 1e-3)
+
+  # Continual Learning Parameters
+  memory_size: 500   
+
+  # Bildgröße und Filteroptionen
+  include_snowy: false
+  include_cloudy: false
+
+  save_dir: ./saved_models                # Verzeichnis zum Speichern der Modelle
+  weight_base_path: "/faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/saved_models/epoch15/task_tuning"
+
+
+2025-07-13 13:00:45,339 INFO Using model module: SpectralGPT
+2025-07-13 13:00:45,339 INFO Successfully imported SpectralGPT module
+2025-07-13 13:01:42,068 INFO Loading weights for country: Finland (permutation index: 0)
+2025-07-13 13:01:42,068 INFO Loading LoRA weights from: /faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/saved_models/epoch15/task_tuning/Finland_lora.safetensors
+2025-07-13 13:01:42,070 INFO Loading classifier weights from: /faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/saved_models/epoch15/task_tuning/Finland_fc.safetensors
+2025-07-13 13:01:42,070 INFO Loading weights for country: Ireland (permutation index: 1)
+2025-07-13 13:01:42,070 INFO Loading LoRA weights from: /faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/saved_models/epoch15/task_tuning/Ireland_lora.safetensors
+2025-07-13 13:01:42,071 INFO Loading classifier weights from: /faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/saved_models/epoch15/task_tuning/Ireland_fc.safetensors
+2025-07-13 13:01:42,071 INFO Loading weights for country: Serbia (permutation index: 2)
+2025-07-13 13:01:42,071 INFO Loading LoRA weights from: /faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/saved_models/epoch15/task_tuning/Serbia_lora.safetensors
+2025-07-13 13:01:42,073 INFO Loading classifier weights from: /faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/saved_models/epoch15/task_tuning/Serbia_fc.safetensors
+2025-07-13 13:01:42,073 INFO Loading weights for country: Portugal (permutation index: 3)
+2025-07-13 13:01:42,073 INFO Loading LoRA weights from: /faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/saved_models/epoch15/task_tuning/Portugal_lora.safetensors
+2025-07-13 13:01:42,074 INFO Loading classifier weights from: /faststorage/continual_low_rank_adaptation_of_remote_sensing_foundation_models/SpectralGPT/saved_models/epoch15/task_tuning/Portugal_fc.safetensors
+2025-07-13 13:01:42,074 INFO Task 2: Adding Ireland to previous merged model
+2025-07-13 13:01:42,085 INFO --- Model Structure ---
+2025-07-13 13:01:42,086 INFO SpectralGPTLightningModule(
+  (model): VisionTransformer(
+    (patch_embed): PatchEmbed(
+      (proj): Conv3d(1, 768, kernel_size=(3, 8, 8), stride=(3, 8, 8))
+    )
+    (blocks): ModuleList(
+      (0): Block(
+        (norm1): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (attn): Attention(
+          (q): Linear(in_features=768, out_features=768, bias=True)
+          (k): Linear(in_features=768, out_features=768, bias=True)
+          (v): Linear(in_features=768, out_features=768, bias=True)
+          (proj): Linear(in_features=768, out_features=768, bias=True)
+          (proj_drop): Dropout(p=0.0, inplace=False)
+        )
+        (drop_path): Identity()
+        (norm2): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (mlp): Mlp(
+          (fc1): Linear(in_features=768, out_features=3072, bias=True)
+          (act): GELU(approximate='none')
+          (drop1): Dropout(p=0.0, inplace=False)
+          (norm): Identity()
+          (fc2): Linear(in_features=3072, out_features=768, bias=True)
+          (drop2): Dropout(p=0.0, inplace=False)
+        )
+      )
+      (1): Block(
+        (norm1): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (attn): Attention(
+          (q): Linear(in_features=768, out_features=768, bias=True)
+          (k): Linear(in_features=768, out_features=768, bias=True)
+          (v): Linear(in_features=768, out_features=768, bias=True)
+          (proj): Linear(in_features=768, out_features=768, bias=True)
+          (proj_drop): Dropout(p=0.0, inplace=False)
+        )
+        (drop_path): DropPath(drop_prob=0.018)
+        (norm2): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (mlp): Mlp(
+          (fc1): Linear(in_features=768, out_features=3072, bias=True)
+          (act): GELU(approximate='none')
+          (drop1): Dropout(p=0.0, inplace=False)
+          (norm): Identity()
+          (fc2): Linear(in_features=3072, out_features=768, bias=True)
+          (drop2): Dropout(p=0.0, inplace=False)
+        )
+      )
+      (2): Block(
+        (norm1): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (attn): Attention(
+          (q): Linear(in_features=768, out_features=768, bias=True)
+          (k): Linear(in_features=768, out_features=768, bias=True)
+          (v): Linear(in_features=768, out_features=768, bias=True)
+          (proj): Linear(in_features=768, out_features=768, bias=True)
+          (proj_drop): Dropout(p=0.0, inplace=False)
+        )
+        (drop_path): DropPath(drop_prob=0.036)
+        (norm2): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (mlp): Mlp(
+          (fc1): Linear(in_features=768, out_features=3072, bias=True)
+          (act): GELU(approximate='none')
+          (drop1): Dropout(p=0.0, inplace=False)
+          (norm): Identity()
+          (fc2): Linear(in_features=3072, out_features=768, bias=True)
+          (drop2): Dropout(p=0.0, inplace=False)
+        )
+      )
+      (3): Block(
+        (norm1): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (attn): Attention(
+          (q): Linear(in_features=768, out_features=768, bias=True)
+          (k): Linear(in_features=768, out_features=768, bias=True)
+          (v): Linear(in_features=768, out_features=768, bias=True)
+          (proj): Linear(in_features=768, out_features=768, bias=True)
+          (proj_drop): Dropout(p=0.0, inplace=False)
+        )
+        (drop_path): DropPath(drop_prob=0.055)
+        (norm2): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (mlp): Mlp(
+          (fc1): Linear(in_features=768, out_features=3072, bias=True)
+          (act): GELU(approximate='none')
+          (drop1): Dropout(p=0.0, inplace=False)
+          (norm): Identity()
+          (fc2): Linear(in_features=3072, out_features=768, bias=True)
+          (drop2): Dropout(p=0.0, inplace=False)
+        )
+      )
+      (4): Block(
+        (norm1): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (attn): Attention(
+          (q): Linear(in_features=768, out_features=768, bias=True)
+          (k): Linear(in_features=768, out_features=768, bias=True)
+          (v): Linear(in_features=768, out_features=768, bias=True)
+          (proj): Linear(in_features=768, out_features=768, bias=True)
+          (proj_drop): Dropout(p=0.0, inplace=False)
+        )
+        (drop_path): DropPath(drop_prob=0.073)
+        (norm2): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (mlp): Mlp(
+          (fc1): Linear(in_features=768, out_features=3072, bias=True)
+          (act): GELU(approximate='none')
+          (drop1): Dropout(p=0.0, inplace=False)
+          (norm): Identity()
+          (fc2): Linear(in_features=3072, out_features=768, bias=True)
+          (drop2): Dropout(p=0.0, inplace=False)
+        )
+      )
+      (5): Block(
+        (norm1): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (attn): Attention(
+          (q): Linear(in_features=768, out_features=768, bias=True)
+          (k): Linear(in_features=768, out_features=768, bias=True)
+          (v): Linear(in_features=768, out_features=768, bias=True)
+          (proj): Linear(in_features=768, out_features=768, bias=True)
+          (proj_drop): Dropout(p=0.0, inplace=False)
+        )
+        (drop_path): DropPath(drop_prob=0.091)
+        (norm2): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (mlp): Mlp(
+          (fc1): Linear(in_features=768, out_features=3072, bias=True)
+          (act): GELU(approximate='none')
+          (drop1): Dropout(p=0.0, inplace=False)
+          (norm): Identity()
+          (fc2): Linear(in_features=3072, out_features=768, bias=True)
+          (drop2): Dropout(p=0.0, inplace=False)
+        )
+      )
+      (6): Block(
+        (norm1): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (attn): Attention(
+          (q): Linear(in_features=768, out_features=768, bias=True)
+          (k): Linear(in_features=768, out_features=768, bias=True)
+          (v): Linear(in_features=768, out_features=768, bias=True)
+          (proj): Linear(in_features=768, out_features=768, bias=True)
+          (proj_drop): Dropout(p=0.0, inplace=False)
+        )
+        (drop_path): DropPath(drop_prob=0.109)
+        (norm2): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (mlp): Mlp(
+          (fc1): Linear(in_features=768, out_features=3072, bias=True)
+          (act): GELU(approximate='none')
+          (drop1): Dropout(p=0.0, inplace=False)
+          (norm): Identity()
+          (fc2): Linear(in_features=3072, out_features=768, bias=True)
+          (drop2): Dropout(p=0.0, inplace=False)
+        )
+      )
+      (7): Block(
+        (norm1): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (attn): Attention(
+          (q): Linear(in_features=768, out_features=768, bias=True)
+          (k): Linear(in_features=768, out_features=768, bias=True)
+          (v): Linear(in_features=768, out_features=768, bias=True)
+          (proj): Linear(in_features=768, out_features=768, bias=True)
+          (proj_drop): Dropout(p=0.0, inplace=False)
+        )
+        (drop_path): DropPath(drop_prob=0.127)
+        (norm2): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (mlp): Mlp(
+          (fc1): Linear(in_features=768, out_features=3072, bias=True)
+          (act): GELU(approximate='none')
+          (drop1): Dropout(p=0.0, inplace=False)
+          (norm): Identity()
+          (fc2): Linear(in_features=3072, out_features=768, bias=True)
+          (drop2): Dropout(p=0.0, inplace=False)
+        )
+      )
+      (8): Block(
+        (norm1): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (attn): Attention(
+          (q): Linear(in_features=768, out_features=768, bias=True)
+          (k): Linear(in_features=768, out_features=768, bias=True)
+          (v): Linear(in_features=768, out_features=768, bias=True)
+          (proj): Linear(in_features=768, out_features=768, bias=True)
+          (proj_drop): Dropout(p=0.0, inplace=False)
+        )
+        (drop_path): DropPath(drop_prob=0.145)
+        (norm2): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (mlp): Mlp(
+          (fc1): Linear(in_features=768, out_features=3072, bias=True)
+          (act): GELU(approximate='none')
+          (drop1): Dropout(p=0.0, inplace=False)
+          (norm): Identity()
+          (fc2): Linear(in_features=3072, out_features=768, bias=True)
+          (drop2): Dropout(p=0.0, inplace=False)
+        )
+      )
+      (9): Block(
+        (norm1): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (attn): Attention(
+          (q): Linear(in_features=768, out_features=768, bias=True)
+          (k): Linear(in_features=768, out_features=768, bias=True)
+          (v): Linear(in_features=768, out_features=768, bias=True)
+          (proj): Linear(in_features=768, out_features=768, bias=True)
+          (proj_drop): Dropout(p=0.0, inplace=False)
+        )
+        (drop_path): DropPath(drop_prob=0.164)
+        (norm2): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (mlp): Mlp(
+          (fc1): Linear(in_features=768, out_features=3072, bias=True)
+          (act): GELU(approximate='none')
+          (drop1): Dropout(p=0.0, inplace=False)
+          (norm): Identity()
+          (fc2): Linear(in_features=3072, out_features=768, bias=True)
+          (drop2): Dropout(p=0.0, inplace=False)
+        )
+      )
+      (10): Block(
+        (norm1): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (attn): Attention(
+          (q): Linear(in_features=768, out_features=768, bias=True)
+          (k): Linear(in_features=768, out_features=768, bias=True)
+          (v): Linear(in_features=768, out_features=768, bias=True)
+          (proj): Linear(in_features=768, out_features=768, bias=True)
+          (proj_drop): Dropout(p=0.0, inplace=False)
+        )
+        (drop_path): DropPath(drop_prob=0.182)
+        (norm2): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (mlp): Mlp(
+          (fc1): Linear(in_features=768, out_features=3072, bias=True)
+          (act): GELU(approximate='none')
+          (drop1): Dropout(p=0.0, inplace=False)
+          (norm): Identity()
+          (fc2): Linear(in_features=3072, out_features=768, bias=True)
+          (drop2): Dropout(p=0.0, inplace=False)
+        )
+      )
+      (11): Block(
+        (norm1): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (attn): Attention(
+          (q): Linear(in_features=768, out_features=768, bias=True)
+          (k): Linear(in_features=768, out_features=768, bias=True)
+          (v): Linear(in_features=768, out_features=768, bias=True)
+          (proj): Linear(in_features=768, out_features=768, bias=True)
+          (proj_drop): Dropout(p=0.0, inplace=False)
+        )
+        (drop_path): DropPath(drop_prob=0.200)
+        (norm2): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+        (mlp): Mlp(
+          (fc1): Linear(in_features=768, out_features=3072, bias=True)
+          (act): GELU(approximate='none')
+          (drop1): Dropout(p=0.0, inplace=False)
+          (norm): Identity()
+          (fc2): Linear(in_features=3072, out_features=768, bias=True)
+          (drop2): Dropout(p=0.0, inplace=False)
+        )
+      )
+    )
+    (norm): LayerNorm((768,), eps=1e-06, elementwise_affine=True)
+    (dropout): Dropout(p=0, inplace=False)
+  )
+  (criterion): BCEWithLogitsLoss()
+)
+2025-07-13 13:01:42,087 INFO -----------------------
+2025-07-13 13:01:42,087 INFO All LoRA heads have consistent ranks. Will use merging.
+2025-07-13 13:01:42,115 INFO Patching module 'model.blocks.0.attn.q' for layer ID 000
+2025-07-13 13:01:42,169 INFO Patching module 'model.blocks.0.attn.v' for layer ID 000
+2025-07-13 13:01:42,170 INFO Patching module 'model.blocks.1.attn.q' for layer ID 001
+2025-07-13 13:01:42,171 INFO Patching module 'model.blocks.1.attn.v' for layer ID 001
+2025-07-13 13:01:42,172 INFO Patching module 'model.blocks.2.attn.q' for layer ID 002
+2025-07-13 13:01:42,172 INFO Patching module 'model.blocks.2.attn.v' for layer ID 002
+2025-07-13 13:01:42,173 INFO Patching module 'model.blocks.3.attn.q' for layer ID 003
+2025-07-13 13:01:42,174 INFO Patching module 'model.blocks.3.attn.v' for layer ID 003
+2025-07-13 13:01:42,178 INFO Patching module 'model.blocks.4.attn.q' for layer ID 004
+2025-07-13 13:01:42,178 INFO Patching module 'model.blocks.4.attn.v' for layer ID 004
+2025-07-13 13:01:42,179 INFO Patching module 'model.blocks.5.attn.q' for layer ID 005
+2025-07-13 13:01:42,180 INFO Patching module 'model.blocks.5.attn.v' for layer ID 005
+2025-07-13 13:01:42,181 INFO Patching module 'model.blocks.6.attn.q' for layer ID 006
+2025-07-13 13:01:42,181 INFO Patching module 'model.blocks.6.attn.v' for layer ID 006
+2025-07-13 13:01:42,182 INFO Patching module 'model.blocks.7.attn.q' for layer ID 007
+2025-07-13 13:01:42,182 INFO Patching module 'model.blocks.7.attn.v' for layer ID 007
+2025-07-13 13:01:42,184 INFO Patching module 'model.blocks.8.attn.q' for layer ID 008
+2025-07-13 13:01:42,184 INFO Patching module 'model.blocks.8.attn.v' for layer ID 008
+2025-07-13 13:01:42,185 INFO Patching module 'model.blocks.9.attn.q' for layer ID 009
+2025-07-13 13:01:42,185 INFO Patching module 'model.blocks.9.attn.v' for layer ID 009
+2025-07-13 13:01:42,186 INFO Patching module 'model.blocks.10.attn.q' for layer ID 010
+2025-07-13 13:01:42,187 INFO Patching module 'model.blocks.10.attn.v' for layer ID 010
+2025-07-13 13:01:42,188 INFO Patching module 'model.blocks.11.attn.q' for layer ID 011
+2025-07-13 13:01:42,188 INFO Patching module 'model.blocks.11.attn.v' for layer ID 011
+2025-07-13 13:01:42,195 INFO Classifier merge weights for task 2: old=0.500, new=0.500
+2025-07-13 13:01:42,196 INFO [LoraSoupsMerge] Trainable LoRA-merge params : 24
+2025-07-13 13:01:42,196 INFO [LoraSoupsMerge] Trainable classifier params : 14,592
+2025-07-13 13:01:42,196 INFO [LoraSoupsMerge] Total trainables            : 14,616
+[96m[INFO]    Loading BEN data for train...[0m
+[96m[INFO]        237871 patches indexed[0m
+[96m[INFO]        450 pre-filtered patches indexed[0m
+[96m[INFO]        450 filtered patches indexed[0m
+[96m[INFO]    Merged metadata with snow/cloud metadata[0m
+[96m[INFO]    Loaded 549488 labels[0m
+[96m[INFO]    Loaded 549488 keys[0m
+[96m[INFO]    Loaded mapping created[0m
+[96m[INFO]    Loading BEN data for train...[0m
+[96m[INFO]        237871 patches indexed[0m
+[96m[INFO]        50 pre-filtered patches indexed[0m
+[96m[INFO]        50 filtered patches indexed[0m
+[96m[INFO]    Merged metadata with snow/cloud metadata[0m
+[96m[INFO]    Loaded 549488 labels[0m
+[96m[INFO]    Loaded 549488 keys[0m
+[96m[INFO]    Loaded mapping created[0m
+[96m[INFO]    Loading BEN data for train...[0m
+[96m[INFO]        237871 patches indexed[0m
+[96m[INFO]        450 pre-filtered patches indexed[0m
+[96m[INFO]        450 filtered patches indexed[0m
+[96m[INFO]    Merged metadata with snow/cloud metadata[0m
+[96m[INFO]    Loaded 549488 labels[0m
+[96m[INFO]    Loaded 549488 keys[0m
+[96m[INFO]    Loaded mapping created[0m
+[96m[INFO]    Loading BEN data for train...[0m
+[96m[INFO]        237871 patches indexed[0m
+[96m[INFO]        50 pre-filtered patches indexed[0m
+[96m[INFO]        50 filtered patches indexed[0m
+[96m[INFO]    Merged metadata with snow/cloud metadata[0m
+[96m[INFO]    Loaded 549488 labels[0m
+[96m[INFO]    Loaded 549488 keys[0m
+[96m[INFO]    Loaded mapping created[0m
+[96m[INFO]    Loading BEN data for train...[0m
+[96m[INFO]        237871 patches indexed[0m
+[96m[INFO]        450 pre-filtered patches indexed[0m
+[96m[INFO]        450 filtered patches indexed[0m
+[96m[INFO]    Merged metadata with snow/cloud metadata[0m
+[96m[INFO]    Loaded 549488 labels[0m
+[96m[INFO]    Loaded 549488 keys[0m
+[96m[INFO]    Loaded mapping created[0m
+[96m[INFO]    Loading BEN data for train...[0m
+[96m[INFO]        237871 patches indexed[0m
+[96m[INFO]        50 pre-filtered patches indexed[0m
+[96m[INFO]        50 filtered patches indexed[0m
+[96m[INFO]    Merged metadata with snow/cloud metadata[0m
+[96m[INFO]    Loaded 549488 labels[0m
+[96m[INFO]    Loaded 549488 keys[0m
+[96m[INFO]    Loaded mapping created[0m
+[96m[INFO]    Loading BEN data for train...[0m
+[96m[INFO]        237871 patches indexed[0m
+[96m[INFO]        450 pre-filtered patches indexed[0m
+[96m[INFO]        450 filtered patches indexed[0m
+[96m[INFO]    Merged metadata with snow/cloud metadata[0m
+[96m[INFO]    Loaded 549488 labels[0m
+[96m[INFO]    Loaded 549488 keys[0m
+[96m[INFO]    Loaded mapping created[0m
+[96m[INFO]    Loading BEN data for train...[0m
+[96m[INFO]        237871 patches indexed[0m
+[96m[INFO]        50 pre-filtered patches indexed[0m
+[96m[INFO]        50 filtered patches indexed[0m
+[96m[INFO]    Merged metadata with snow/cloud metadata[0m
+[96m[INFO]    Loaded 549488 labels[0m
+[96m[INFO]    Loaded 549488 keys[0m
+[96m[INFO]    Loaded mapping created[0m
+[96m[INFO]    Loading BEN data for test...[0m
+[96m[INFO]        119825 patches indexed[0m
+[96m[INFO]        500 pre-filtered patches indexed[0m
+[96m[INFO]        500 filtered patches indexed[0m
+[96m[INFO]    Merged metadata with snow/cloud metadata[0m
+[96m[INFO]    Loaded 549488 labels[0m
+[96m[INFO]    Loaded 549488 keys[0m
+[96m[INFO]    Loaded mapping created[0m
+[96m[INFO]    Loading BEN data for test...[0m
+[96m[INFO]        119825 patches indexed[0m
+[96m[INFO]        0 pre-filtered patches indexed[0m
+[96m[INFO]        0 filtered patches indexed[0m
+[96m[INFO]    Merged metadata with snow/cloud metadata[0m
+[96m[INFO]    Loaded 549488 labels[0m
+[96m[INFO]    Loaded 549488 keys[0m
+[96m[INFO]    Loaded mapping created[0m
+[96m[INFO]    Loading BEN data for test...[0m
+[96m[INFO]        119825 patches indexed[0m
+[96m[INFO]        500 pre-filtered patches indexed[0m
+[96m[INFO]        500 filtered patches indexed[0m
+[96m[INFO]    Merged metadata with snow/cloud metadata[0m
+[96m[INFO]    Loaded 549488 labels[0m
+[96m[INFO]    Loaded 549488 keys[0m
+[96m[INFO]    Loaded mapping created[0m
+[96m[INFO]    Loading BEN data for test...[0m
+[96m[INFO]        119825 patches indexed[0m
+[96m[INFO]        0 pre-filtered patches indexed[0m
+[96m[INFO]        0 filtered patches indexed[0m
+[96m[INFO]    Merged metadata with snow/cloud metadata[0m
+[96m[INFO]    Loaded 549488 labels[0m
+[96m[INFO]    Loaded 549488 keys[0m
+[96m[INFO]    Loaded mapping created[0m
+[96m[INFO]    Loading BEN data for test...[0m
+[96m[INFO]        119825 patches indexed[0m
+[96m[INFO]        500 pre-filtered patches indexed[0m
+[96m[INFO]        500 filtered patches indexed[0m
+[96m[INFO]    Merged metadata with snow/cloud metadata[0m
+[96m[INFO]    Loaded 549488 labels[0m
+[96m[INFO]    Loaded 549488 keys[0m
+[96m[INFO]    Loaded mapping created[0m
+[96m[INFO]    Loading BEN data for test...[0m
+[96m[INFO]        119825 patches indexed[0m
+[96m[INFO]        0 pre-filtered patches indexed[0m
+[96m[INFO]        0 filtered patches indexed[0m
+[96m[INFO]    Merged metadata with snow/cloud metadata[0m
+[96m[INFO]    Loaded 549488 labels[0m
+[96m[INFO]    Loaded 549488 keys[0m
+[96m[INFO]    Loaded mapping created[0m
+[96m[INFO]    Loading BEN data for test...[0m
+[96m[INFO]        119825 patches indexed[0m
+[96m[INFO]        500 pre-filtered patches indexed[0m
+[96m[INFO]        500 filtered patches indexed[0m
+[96m[INFO]    Merged metadata with snow/cloud metadata[0m
+[96m[INFO]    Loaded 549488 labels[0m
+[96m[INFO]    Loaded 549488 keys[0m
+[96m[INFO]    Loaded mapping created[0m
+[96m[INFO]    Loading BEN data for test...[0m
+[96m[INFO]        119825 patches indexed[0m
+[96m[INFO]        0 pre-filtered patches indexed[0m
+[96m[INFO]        0 filtered patches indexed[0m
+[96m[INFO]    Merged metadata with snow/cloud metadata[0m
+[96m[INFO]    Loaded 549488 labels[0m
+[96m[INFO]    Loaded 549488 keys[0m
+[96m[INFO]    Loaded mapping created[0m
+img_size (128, 128) patch_size (8, 8) frames 12 t_patch_size 3
+Embedding size of ckpt: 768
+Number of patches of model: 1024
+Number of extra tokens of model: -768
+Original size of ckpt: 12
+New size of model: 16
+Position interpolate from 12x12 to 16x16
+Loaded with: <All keys matched successfully>
+ViT trainable parameters w/o LoRA: 85403904
+[0, 1, 2, 3]
+['Finland', 'Ireland', 'Serbia', 'Portugal']
+Loading weights for country: Finland (permutation index: 0)
+Loading weights for country: Ireland (permutation index: 1)
+Loading weights for country: Serbia (permutation index: 2)
+Loading weights for country: Portugal (permutation index: 3)
+<configilm.extra.DataSets.BENv2_DataSet.BENv2DataSet object at 0x7f3f8dc5fcd0>
+<configilm.extra.DataSets.BENv2_DataSet.BENv2DataSet object at 0x7f3f8dc5f970>
+Epoch 1/1: 0batch [00:00, ?batch/s]Epoch 1/1: 0batch [00:01, ?batch/s, loss=0.322]Epoch 1/1: 1batch [00:01,  1.21s/batch, loss=0.322]Epoch 1/1: 1batch [00:02,  1.21s/batch, loss=0.313]Epoch 1/1: 2batch [00:02,  1.00batch/s, loss=0.313]Epoch 1/1: 2batch [00:02,  1.00batch/s, loss=0.308]Epoch 1/1: 3batch [00:02,  1.10batch/s, loss=0.308]Epoch 1/1: 3batch [00:03,  1.10batch/s, loss=0.269]Epoch 1/1: 4batch [00:03,  1.13batch/s, loss=0.269]Epoch 1/1: 4batch [00:04,  1.13batch/s, loss=0.278]Epoch 1/1: 5batch [00:04,  1.16batch/s, loss=0.278]Epoch 1/1: 5batch [00:05,  1.16batch/s, loss=0.239]Epoch 1/1: 6batch [00:05,  1.17batch/s, loss=0.239]Epoch 1/1: 6batch [00:06,  1.17batch/s, loss=0.329]Epoch 1/1: 7batch [00:06,  1.17batch/s, loss=0.329]Epoch 1/1: 7batch [00:07,  1.17batch/s, loss=0.279]Epoch 1/1: 8batch [00:07,  1.18batch/s, loss=0.279]Epoch 1/1: 8batch [00:07,  1.18batch/s, loss=0.214]Epoch 1/1: 9batch [00:07,  1.19batch/s, loss=0.214]Epoch 1/1: 9batch [00:08,  1.19batch/s, loss=0.251]Epoch 1/1: 10batch [00:08,  1.19batch/s, loss=0.251]Epoch 1/1: 10batch [00:09,  1.19batch/s, loss=0.223]Epoch 1/1: 11batch [00:09,  1.19batch/s, loss=0.223]Epoch 1/1: 11batch [00:10,  1.19batch/s, loss=0.333]Epoch 1/1: 12batch [00:10,  1.20batch/s, loss=0.333]Epoch 1/1: 12batch [00:11,  1.20batch/s, loss=0.271]Epoch 1/1: 13batch [00:11,  1.20batch/s, loss=0.271]Epoch 1/1: 13batch [00:12,  1.20batch/s, loss=0.347]Epoch 1/1: 14batch [00:12,  1.20batch/s, loss=0.347]Epoch 1/1: 14batch [00:12,  1.20batch/s, loss=0.234]Epoch 1/1: 15batch [00:12,  1.19batch/s, loss=0.234]Epoch 1/1: 15batch [00:13,  1.19batch/s, loss=0.221]Epoch 1/1: 16batch [00:13,  1.19batch/s, loss=0.221]Epoch 1/1: 16batch [00:14,  1.19batch/s, loss=0.199]Epoch 1/1: 17batch [00:14,  1.19batch/s, loss=0.199]Epoch 1/1: 17batch [00:15,  1.19batch/s, loss=0.345]Epoch 1/1: 18batch [00:15,  1.19batch/s, loss=0.345]Epoch 1/1: 18batch [00:16,  1.19batch/s, loss=0.31] Epoch 1/1: 19batch [00:16,  1.19batch/s, loss=0.31]Epoch 1/1: 19batch [00:17,  1.19batch/s, loss=0.319]Epoch 1/1: 20batch [00:17,  1.18batch/s, loss=0.319]Epoch 1/1: 20batch [00:17,  1.18batch/s, loss=0.282]Epoch 1/1: 21batch [00:17,  1.20batch/s, loss=0.282]Epoch 1/1: 21batch [00:18,  1.20batch/s, loss=0.247]Epoch 1/1: 22batch [00:18,  1.21batch/s, loss=0.247]Epoch 1/1: 22batch [00:19,  1.21batch/s, loss=0.288]Epoch 1/1: 23batch [00:19,  1.20batch/s, loss=0.288]Epoch 1/1: 23batch [00:20,  1.20batch/s, loss=0.272]Epoch 1/1: 24batch [00:20,  1.20batch/s, loss=0.272]Epoch 1/1: 24batch [00:21,  1.20batch/s, loss=0.283]Epoch 1/1: 25batch [00:21,  1.19batch/s, loss=0.283]Epoch 1/1: 25batch [00:22,  1.19batch/s, loss=0.281]Epoch 1/1: 26batch [00:22,  1.19batch/s, loss=0.281]Epoch 1/1: 26batch [00:22,  1.19batch/s, loss=0.189]Epoch 1/1: 27batch [00:22,  1.19batch/s, loss=0.189]Epoch 1/1: 27batch [00:23,  1.19batch/s, loss=0.267]Epoch 1/1: 28batch [00:23,  1.19batch/s, loss=0.267]Epoch 1/1: 28batch [00:24,  1.19batch/s, loss=0.234]Epoch 1/1: 29batch [00:24,  1.18batch/s, loss=0.234]Epoch 1/1: 29batch [00:25,  1.18batch/s, loss=0.25] Epoch 1/1: 30batch [00:25,  1.18batch/s, loss=0.25]Epoch 1/1: 30batch [00:26,  1.18batch/s, loss=0.215]Epoch 1/1: 31batch [00:26,  1.18batch/s, loss=0.215]Epoch 1/1: 31batch [00:27,  1.18batch/s, loss=0.254]Epoch 1/1: 32batch [00:27,  1.19batch/s, loss=0.254]Epoch 1/1: 32batch [00:28,  1.19batch/s, loss=0.217]Epoch 1/1: 33batch [00:28,  1.19batch/s, loss=0.217]Epoch 1/1: 33batch [00:28,  1.19batch/s, loss=0.216]Epoch 1/1: 34batch [00:28,  1.19batch/s, loss=0.216]Epoch 1/1: 34batch [00:29,  1.19batch/s, loss=0.294]Epoch 1/1: 35batch [00:29,  1.18batch/s, loss=0.294]Epoch 1/1: 35batch [00:30,  1.18batch/s, loss=0.198]Epoch 1/1: 36batch [00:30,  1.18batch/s, loss=0.198]Epoch 1/1: 36batch [00:31,  1.18batch/s, loss=0.317]Epoch 1/1: 37batch [00:31,  1.18batch/s, loss=0.317]Epoch 1/1: 37batch [00:32,  1.18batch/s, loss=0.282]Epoch 1/1: 38batch [00:32,  1.18batch/s, loss=0.282]Epoch 1/1: 38batch [00:33,  1.18batch/s, loss=0.273]Epoch 1/1: 39batch [00:33,  1.18batch/s, loss=0.273]Epoch 1/1: 39batch [00:33,  1.18batch/s, loss=0.175]Epoch 1/1: 40batch [00:33,  1.19batch/s, loss=0.175]Epoch 1/1: 40batch [00:34,  1.19batch/s, loss=0.233]Epoch 1/1: 41batch [00:34,  1.18batch/s, loss=0.233]Epoch 1/1: 41batch [00:35,  1.18batch/s, loss=0.218]Epoch 1/1: 42batch [00:35,  1.18batch/s, loss=0.218]Epoch 1/1: 42batch [00:36,  1.18batch/s, loss=0.3]  Epoch 1/1: 43batch [00:36,  1.19batch/s, loss=0.3]Epoch 1/1: 43batch [00:37,  1.19batch/s, loss=0.244]Epoch 1/1: 44batch [00:37,  1.19batch/s, loss=0.244]Epoch 1/1: 44batch [00:38,  1.19batch/s, loss=0.272]Epoch 1/1: 45batch [00:38,  1.19batch/s, loss=0.272]Epoch 1/1: 45batch [00:39,  1.19batch/s, loss=0.239]Epoch 1/1: 46batch [00:39,  1.19batch/s, loss=0.239]Epoch 1/1: 46batch [00:39,  1.19batch/s, loss=0.201]Epoch 1/1: 47batch [00:39,  1.19batch/s, loss=0.201]Epoch 1/1: 47batch [00:40,  1.19batch/s, loss=0.285]Epoch 1/1: 48batch [00:40,  1.19batch/s, loss=0.285]Epoch 1/1: 48batch [00[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+:41,  1.19batch/s, loss=0.281]Epoch 1/1: 49batch [00:41,  1.20batch/s, loss=0.281]Epoch 1/1: 49batch [00:42,  1.20batch/s, loss=0.22] Epoch 1/1: 50batch [00:42,  1.21batch/s, loss=0.22]Epoch 1/1: 50batch [00:43,  1.21batch/s, loss=0.307]Epoch 1/1: 51batch [00:43,  1.22batch/s, loss=0.307]Epoch 1/1: 51batch [00:43,  1.22batch/s, loss=0.247]Epoch 1/1: 52batch [00:43,  1.23batch/s, loss=0.247]Epoch 1/1: 52batch [00:44,  1.23batch/s, loss=0.267]Epoch 1/1: 53batch [00:44,  1.23batch/s, loss=0.267]Epoch 1/1: 53batch [00:45,  1.23batch/s, loss=0.219]Epoch 1/1: 54batch [00:45,  1.24batch/s, loss=0.219]Epoch 1/1: 54batch [00:46,  1.24batch/s, loss=0.217]Epoch 1/1: 55batch [00:46,  1.24batch/s, loss=0.217]Epoch 1/1: 55batch [00:47,  1.24batch/s, loss=0.213]Epoch 1/1: 56batch [00:47,  1.24batch/s, loss=0.213]Epoch 1/1: 56batch [00:47,  1.24batch/s, loss=0.204]Epoch 1/1: 57batch [00:47,  1.57batch/s, loss=0.204]Epoch 1/1: 57batch [00:47,  1.20batch/s, loss=0.204]
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+2025-07-13 13:02:31,699 INFO Merge time for task 2: 49.62s
+2025-07-13 13:02:31,712 INFO Continual merged model saved: ./saved_models/continual_task2-Finland-Ireland.pkl
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([4, 1, 12, 128, 128])
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([4, 1, 12, 128, 128])
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+2025-07-13 13:03:19,630 INFO Evaluation time for task 2: 47.92s
+2025-07-13 13:03:20,690 INFO Task 2 completed. Combined test accuracy: 88.18947368421053
+2025-07-13 13:03:20,691 INFO Result: {'task': 2, 'countries': ('Finland', 'Ireland'), 'merge_time_s': 49.624165296554565, 'eval_time_s': 47.917768478393555, 'num_tasks_merged': 2, 'combined_micro_ap': np.float64(0.5395110122194791), 'combined_macro_ap': np.float64(0.24113042583558553), 'combined_accuracy': 88.18947368421053, 'Finland_micro_ap': np.float64(0.657268873104203), 'Finland_macro_ap': np.float64(0.24297233327386025), 'Finland_accuracy': 88.88421052631578, 'Ireland_micro_ap': np.float64(0.41219828208302), 'Ireland_macro_ap': np.float64(0.23140990044269655), 'Ireland_accuracy': 87.49473684210527, 'mean_micro_ap': np.float64(0.5347335775936115), 'mean_macro_ap': np.float64(0.2371911168582784), 'mean_accuracy': 88.18947368421053}
+2025-07-13 13:03:20,691 INFO Task 3: Adding Serbia to previous merged model
+2025-07-13 13:03:20,695 INFO Inconsistent ranks found for layer 000: [8, 4]. Will use delta-based merging.
+2025-07-13 13:03:20,696 INFO Patching module 'model.blocks.0.attn.q' for layer ID 000
+2025-07-13 13:03:20,697 INFO Patching module 'model.blocks.0.attn.v' for layer ID 000
+2025-07-13 13:03:20,698 INFO Patching module 'model.blocks.1.attn.q' for layer ID 001
+2025-07-13 13:03:20,698 INFO Patching module 'model.blocks.1.attn.v' for layer ID 001
+2025-07-13 13:03:20,699 INFO Patching module 'model.blocks.2.attn.q' for layer ID 002
+2025-07-13 13:03:20,699 INFO Patching module 'model.blocks.2.attn.v' for layer ID 002
+2025-07-13 13:03:20,700 INFO Patching module 'model.blocks.3.attn.q' for layer ID 003
+2025-07-13 13:03:20,701 INFO Patching module 'model.blocks.3.attn.v' for layer ID 003
+2025-07-13 13:03:20,702 INFO Patching module 'model.blocks.4.attn.q' for layer ID 004
+2025-07-13 13:03:20,702 INFO Patching module 'model.blocks.4.attn.v' for layer ID 004
+2025-07-13 13:03:20,703 INFO Patching module 'model.blocks.5.attn.q' for layer ID 005
+2025-07-13 13:03:20,704 INFO Patching module 'model.blocks.5.attn.v' for layer ID 005
+2025-07-13 13:03:20,705 INFO Patching module 'model.blocks.6.attn.q' for layer ID 006
+2025-07-13 13:03:20,705 INFO Patching module 'model.blocks.6.attn.v' for layer ID 006
+2025-07-13 13:03:20,706 INFO Patching module 'model.blocks.7.attn.q' for layer ID 007
+2025-07-13 13:03:20,706 INFO Patching module 'model.blocks.7.attn.v' for layer ID 007
+2025-07-13 13:03:20,707 INFO Patching module 'model.blocks.8.attn.q' for layer ID 008
+2025-07-13 13:03:20,708 INFO Patching module 'model.blocks.8.attn.v' for layer ID 008
+2025-07-13 13:03:20,709 INFO Patching module 'model.blocks.9.attn.q' for layer ID 009
+2025-07-13 13:03:20,709 INFO Patching module 'model.blocks.9.attn.v' for layer ID 009
+2025-07-13 13:03:20,710 INFO Patching module 'model.blocks.10.attn.q' for layer ID 010
+2025-07-13 13:03:20,710 INFO Patching module 'model.blocks.10.attn.v' for layer ID 010
+2025-07-13 13:03:20,711 INFO Patching module 'model.blocks.11.attn.q' for layer ID 011
+2025-07-13 13:03:20,712 INFO Patching module 'model.blocks.11.attn.v' for layer ID 011
+2025-07-13 13:03:20,712 INFO Classifier merge weights for task 3: old=0.667, new=0.333
+2025-07-13 13:03:20,713 INFO [LoraSoupsMerge] Trainable LoRA-merge params : 24
+2025-07-13 13:03:20,713 INFO [LoraSoupsMerge] Trainable classifier params : 14,592
+2025-07-13 13:03:20,713 INFO [LoraSoupsMerge] Total trainables            : 14,616
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([4, 1, 12, 128, 128])
+<configilm.extra.DataSets.BENv2_DataSet.BENv2DataSet object at 0x7f3f8dc5fcd0>
+<configilm.extra.DataSets.BENv2_DataSet.BENv2DataSet object at 0x7f3f8dc5f970>
+<configilm.extra.DataSets.BENv2_DataSet.BENv2DataSet object at 0x7f3f8dc5f130>
+<configilm.extra.DataSets.BENv2_DataSet.BENv2DataSet object at 0x7f3f8dc5f1f0>
+Epoch 1/1: 0batch [00:00, ?batch/s]Epoch 1/1: 0batch [00:00, ?batch/s, loss=0.341]Epoch 1/1: 1batch [00:00,  1.08batch/s, loss=0.341]Epoch 1/1: 1batch [00:01,  1.08batch/s, loss=0.334]Epoch 1/1: 2batch [00:01,  1.15batch/s, loss=0.334]Epoch 1/1: 2batch [00:02,  1.15batch/s, loss=0.334]Epoch 1/1: 3batch [00:02,  1.16batch/s, loss=0.334]Epoch 1/1: 3batch [00:03,  1.16batch/s, loss=0.325]Epoch 1/1: 4batch [00:03,  1.17batch/s, loss=0.325]Epoch 1/1: 4batch [00:04,  1.17batch/s, loss=0.295]Epoch 1/1: 5batch [00:04,  1.19batch/s, loss=0.295]Epoch 1/1: 5batch [00:05,  1.19batch/s, loss=0.339]Epoch 1/1: 6batch [00:05,  1.19batch/s, loss=0.339]Epoch 1/1: 6batch [00:05,  1.19batch/s, loss=0.368]Epoch 1/1: 7batch [00:05,  1.20batch/s, loss=0.368]Epoch 1/1: 7batch [00:06,  1.20batch/s, loss=0.376]Epoch 1/1: 8batch [00:06,  1.20batch/s, loss=0.376]Epoch 1/1: 8batch [00:07,  1.20batch/s, loss=0.333]Epoch 1/1: 9batch [00:07,  1.21batch/s, loss=0.333]Epoch 1/1: 9batch [00:08,  1.21batch/s, loss=0.28] Epoch 1/1: 10batch [00:08,  1.20batch/s, loss=0.28]Epoch 1/1: 10batch [00:09,  1.20batch/s, loss=0.288]Epoch 1/1: 11batch [00:09,  1.21batch/s, loss=0.288]Epoch 1/1: 11batch [00:10,  1.21batch/s, loss=0.315]Epoch 1/1: 12batch [00:10,  1.20batch/s, loss=0.315]Epoch 1/1: 12batch [00:10,  1.20batch/s, loss=0.304]Epoch 1/1: 13batch [00:10,  1.21batch/s, loss=0.304]Epoch 1/1: 13batch [00:11,  1.21batch/s, loss=0.352]Epoch 1/1: 14batch [00:11,  1.19batch/s, loss=0.352]Epoch 1/1: 14batch [00:12,  1.19batch/s, loss=0.361]Epoch 1/1: 15batch [00:12,  1.19batch/s, loss=0.361]Epoch 1/1: 15batch [00:13,  1.19batch/s, loss=0.319]Epoch 1/1: 16batch [00:13,  1.18batch/s, loss=0.319]Epoch 1/1: 16batch [00:14,  1.18batch/s, loss=0.305]Epoch 1/1: 17batch [00:14,  1.17batch/s, loss=0.305]Epoch 1/1: 17batch [00:15,  1.17batch/s, loss=0.326]Epoch 1/1: 18batch [00:15,  1.18batch/s, loss=0.326]Epoch 1/1: 18batch [00:16,  1.18batch/s, loss=0.293]Epoch 1/1: 19batch [00:16,  1.19batch/s, loss=0.293]Epoch 1/1: 19batch [00:16,  1.19batch/s, loss=0.339]Epoch 1/1: 20batch [00:16,  1.19batch/s, loss=0.339]Epoch 1/1: 20batch [00:17,  1.19batch/s, loss=0.309]Epoch 1/1: 21batch [00:17,  1.17batch/s, loss=0.309]Epoch 1/1: 21batch [00:18,  1.17batch/s, loss=0.27] Epoch 1/1: 22batch [00:18,  1.17batch/s, loss=0.27]Epoch 1/1: 22batch [00:19,  1.17batch/s, loss=0.321]Epoch 1/1: 23batch [00:19,  1.18batch/s, loss=0.321]Epoch 1/1: 23batch [00:20,  1.18batch/s, loss=0.301]Epoch 1/1: 24batch [00:20,  1.17batch/s, loss=0.301]Epoch 1/1: 24batch [00:21,  1.17batch/s, loss=0.264]Epoch 1/1: 25batch [00:21,  1.17batch/s, loss=0.264]Epoch 1/1: 25batch [00:22,  1.17batch/s, loss=0.336]Epoch 1/1: 26batch [00:22,  1.17batch/s, loss=0.336]Epoch 1/1: 26batch [00:22,  1.17batch/s, loss=0.29] Epoch 1/1: 27batch [00:22,  1.19batch/s, loss=0.29]Epoch 1/1: 27batch [00:23,  1.19batch/s, loss=0.281]Epoch 1/1: 28batch [00:23,  1.20batch/s, loss=0.281]Epoch 1/1: 28batch [00:24,  1.20batch/s, loss=0.276]Epoch 1/1: 29batch [00:24,  1.19batch/s, loss=0.276]Epoch 1/1: 29batch [00:25,  1.19batch/s, loss=0.338]Epoch 1/1: 30batch [00:25,  1.20batch/s, loss=0.338]Epoch 1/1: 30batch [00:26,  1.20batch/s, loss=0.313]Epoch 1/1: 31batch [00:26,  1.19batch/s, loss=0.313]Epoch 1/1: 31batch [00:27,  1.19batch/s, loss=0.28] Epoch 1/1: 32batch [00:27,  1.19batch/s, loss=0.28]Epoch 1/1: 32batch [00:27,  1.19batch/s, loss=0.295]Epoch 1/1: 33batch [00:27,  1.19batch/s, loss=0.295]Epoch 1/1: 33batch [00:28,  1.19batch/s, loss=0.279]Epoch 1/1: 34batch [00:28,  1.19batch/s, loss=0.279]Epoch 1/1: 34batch [00:29,  1.19batch/s, loss=0.327]Epoch 1/1: 35batch [00:29,  1.18batch/s, loss=0.327]Epoch 1/1: 35batch [00:30,  1.18batch/s, loss=0.296]Epoch 1/1: 36batch [00:30,  1.18batch/s, loss=0.296]Epoch 1/1: 36batch [00:31,  1.18batch/s, loss=0.336]Epoch 1/1: 37batch [00:31,  1.17batch/s, loss=0.336]Epoch 1/1: 37batch [00:32,  1.17batch/s, loss=0.365]Epoch 1/1: 38batch [00:32,  1.17batch/s, loss=0.365]Epoch 1/1: 38batch [00:32,  1.17batch/s, loss=0.316]Epoch 1/1: 39batch [00:32,  1.17batch/s, loss=0.316]Epoch 1/1: 39batch [00:33,  1.17batch/s, loss=0.349]Epoch 1/1: 40batch [00:33,  1.17batch/s, loss=0.349]Epoch 1/1: 40batch [00:34,  1.17batch/s, loss=0.249]Epoch 1/1: 41batch [00:34,  1.17batch/s, loss=0.249]Epoch 1/1: 41batch [00:35,  1.17batch/s, loss=0.303]Epoch 1/1: 42batch [00:35,  1.17batch/s, loss=0.303]Epoch 1/1: 42batch [00:36,  1.17batch/s, loss=0.319]Epoch 1/1: 43batch [00:36,  1.16batch/s, loss=0.319]Epoch 1/1: 43batch [00:37,  1.16batch/s, loss=0.283]Epoch 1/1: 44batch [00:37,  1.17batch/s, loss=0.283]Epoch 1/1: 44batch [00:38,  1.17batch/s, loss=0.302]Epoch 1/1: 45batch [00:38,  1.16batch/s, loss=0.302]Epoch 1/1: 45batch [00:38,  1.16batch/s, loss=0.293]Epoch 1/1: 46batch [00:38,  1.17batch/s, loss=0.293]Epoch 1/1: 46batch [00:39,  1.17batch/s, loss=0.328]Epoch 1/1: 47batch [00:39,  1.17batch/s, loss=0.328]Epoch 1/1: 47batch [00:40,  1.17batch/s, loss=0.289]Epoch 1/1: 48batch [00:40,  1.17batch/s, loss=0.289]Epoch 1/1: 48batch [00[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+:41,  1.17batch/s, loss=0.266]Epoch 1/1: 49batch [00:41,  1.17batch/s, loss=0.266]Epoch 1/1: 49batch [00:42,  1.17batch/s, loss=0.333]Epoch 1/1: 50batch [00:42,  1.17batch/s, loss=0.333]Epoch 1/1: 50batch [00:43,  1.17batch/s, loss=0.313]Epoch 1/1: 51batch [00:43,  1.18batch/s, loss=0.313]Epoch 1/1: 51batch [00:44,  1.18batch/s, loss=0.252]Epoch 1/1: 52batch [00:44,  1.18batch/s, loss=0.252]Epoch 1/1: 52batch [00:44,  1.18batch/s, loss=0.313]Epoch 1/1: 53batch [00:44,  1.18batch/s, loss=0.313]Epoch 1/1: 53batch [00:45,  1.18batch/s, loss=0.314]Epoch 1/1: 54batch [00:45,  1.19batch/s, loss=0.314]Epoch 1/1: 54batch [00:46,  1.19batch/s, loss=0.326]Epoch 1/1: 55batch [00:46,  1.19batch/s, loss=0.326]Epoch 1/1: 55batch [00:47,  1.19batch/s, loss=0.286]Epoch 1/1: 56batch [00:47,  1.20batch/s, loss=0.286]Epoch 1/1: 56batch [00:47,  1.20batch/s, loss=0.315]Epoch 1/1: 57batch [00:47,  1.36batch/s, loss=0.315]Epoch 1/1: 57batch [00:48,  1.18batch/s, loss=0.315]
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+2025-07-13 13:04:10,819 INFO Merge time for task 3: 50.13s
+2025-07-13 13:04:10,874 INFO Continual merged model saved: ./saved_models/continual_task3-Finland-Ireland-Serbia.pkl
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([10, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([4, 1, 12, 128, 128])
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([4, 1, 12, 128, 128])
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([4, 1, 12, 128, 128])
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+2025-07-13 13:05:21,877 INFO Evaluation time for task 3: 71.00s
+2025-07-13 13:05:21,878 INFO Task 3 completed. Combined test accuracy: 86.56140350877193
+2025-07-13 13:05:21,878 INFO Result: {'task': 3, 'countries': ('Finland', 'Ireland', 'Serbia'), 'merge_time_s': 50.127222537994385, 'eval_time_s': 71.00287961959839, 'num_tasks_merged': 3, 'combined_micro_ap': np.float64(0.4172797981036669), 'combined_macro_ap': np.float64(0.26407014627714215), 'combined_accuracy': 86.56140350877193, 'Finland_micro_ap': np.float64(0.4164204651898411), 'Finland_macro_ap': np.float64(0.23565508194720147), 'Finland_accuracy': 86.6842105263158, 'Ireland_micro_ap': np.float64(0.3357073031570478), 'Ireland_macro_ap': np.float64(0.23935429848855977), 'Ireland_accuracy': 88.71578947368421, 'Serbia_micro_ap': np.float64(0.5293842373890247), 'Serbia_macro_ap': np.float64(0.2136486431783104), 'Serbia_accuracy': 84.28421052631579, 'mean_micro_ap': np.float64(0.4271706685786379), 'mean_macro_ap': np.float64(0.22955267453802386), 'mean_accuracy': 86.56140350877193}
+2025-07-13 13:05:21,878 INFO Task 4: Adding Portugal to previous merged model
+2025-07-13 13:05:21,882 WARNING Initial layer ID discovery failed (no 'w_a_' keys). Falling back to robust discovery from all heads.
+2025-07-13 13:05:21,882 INFO Head 0 is in delta-only format. Will use delta-based merging.
+2025-07-13 13:05:21,884 INFO Patching module 'model.blocks.0.attn.q' for layer ID 000
+2025-07-13 13:05:21,884 INFO Patching module 'model.blocks.0.attn.v' for layer ID 000
+2025-07-13 13:05:21,886 INFO Patching module 'model.blocks.1.attn.q' for layer ID 001
+2025-07-13 13:05:21,886 INFO Patching module 'model.blocks.1.attn.v' for layer ID 001
+2025-07-13 13:05:21,888 INFO Patching module 'model.blocks.2.attn.q' for layer ID 002
+2025-07-13 13:05:21,888 INFO Patching module 'model.blocks.2.attn.v' for layer ID 002
+2025-07-13 13:05:21,890 INFO Patching module 'model.blocks.3.attn.q' for layer ID 003
+2025-07-13 13:05:21,890 INFO Patching module 'model.blocks.3.attn.v' for layer ID 003
+2025-07-13 13:05:21,892 INFO Patching module 'model.blocks.4.attn.q' for layer ID 004
+2025-07-13 13:05:21,892 INFO Patching module 'model.blocks.4.attn.v' for layer ID 004
+2025-07-13 13:05:21,893 INFO Patching module 'model.blocks.5.attn.q' for layer ID 005
+2025-07-13 13:05:21,894 INFO Patching module 'model.blocks.5.attn.v' for layer ID 005
+2025-07-13 13:05:21,895 INFO Patching module 'model.blocks.6.attn.q' for layer ID 006
+2025-07-13 13:05:21,896 INFO Patching module 'model.blocks.6.attn.v' for layer ID 006
+2025-07-13 13:05:21,897 INFO Patching module 'model.blocks.7.attn.q' for layer ID 007
+2025-07-13 13:05:21,898 INFO Patching module 'model.blocks.7.attn.v' for layer ID 007
+2025-07-13 13:05:21,899 INFO Patching module 'model.blocks.8.attn.q' for layer ID 008
+2025-07-13 13:05:21,899 INFO Patching module 'model.blocks.8.attn.v' for layer ID 008
+2025-07-13 13:05:21,901 INFO Patching module 'model.blocks.9.attn.q' for layer ID 009
+2025-07-13 13:05:21,901 INFO Patching module 'model.blocks.9.attn.v' for layer ID 009
+2025-07-13 13:05:21,903 INFO Patching module 'model.blocks.10.attn.q' for layer ID 010
+2025-07-13 13:05:21,903 INFO Patching module 'model.blocks.10.attn.v' for layer ID 010
+2025-07-13 13:05:21,905 INFO Patching module 'model.blocks.11.attn.q' for layer ID 011
+2025-07-13 13:05:21,905 INFO Patching module 'model.blocks.11.attn.v' for layer ID 011
+2025-07-13 13:05:21,906 WARNING Head 0 for layer 012 is missing 'delta_012' or ('w_a_012', 'w_b_012'). Skipping this head for this layer.
+2025-07-13 13:05:21,907 WARNING Head 0 for layer 013 is missing 'delta_013' or ('w_a_013', 'w_b_013'). Skipping this head for this layer.
+2025-07-13 13:05:21,907 WARNING Head 0 for layer 014 is missing 'delta_014' or ('w_a_014', 'w_b_014'). Skipping this head for this layer.
+2025-07-13 13:05:21,908 WARNING Head 0 for layer 015 is missing 'delta_015' or ('w_a_015', 'w_b_015'). Skipping this head for this layer.
+2025-07-13 13:05:21,909 WARNING Head 0 for layer 016 is missing 'delta_016' or ('w_a_016', 'w_b_016'). Skipping this head for this layer.
+2025-07-13 13:05:21,909 WARNING Head 0 for layer 017 is missing 'delta_017' or ('w_a_017', 'w_b_017'). Skipping this head for this layer.
+2025-07-13 13:05:21,910 WARNING Head 0 for layer 018 is missing 'delta_018' or ('w_a_018', 'w_b_018'). Skipping this head for this layer.
+2025-07-13 13:05:21,910 WARNING Head 0 for layer 019 is missing 'delta_019' or ('w_a_019', 'w_b_019'). Skipping this head for this layer.
+2025-07-13 13:05:21,911 WARNING Head 0 for layer 020 is missing 'delta_020' or ('w_a_020', 'w_b_020'). Skipping this head for this layer.
+2025-07-13 13:05:21,911 WARNING Head 0 for layer 021 is missing 'delta_021' or ('w_a_021', 'w_b_021'). Skipping this head for this layer.
+2025-07-13 13:05:21,912 WARNING Head 0 for layer 022 is missing 'delta_022' or ('w_a_022', 'w_b_022'). Skipping this head for this layer.
+2025-07-13 13:05:21,913 WARNING Head 0 for layer 023 is missing 'delta_023' or ('w_a_023', 'w_b_023'). Skipping this head for this layer.
+2025-07-13 13:05:21,913 INFO Classifier merge weights for task 4: old=0.750, new=0.250
+2025-07-13 13:05:21,914 INFO [LoraSoupsMerge] Trainable LoRA-merge params : 24
+2025-07-13 13:05:21,914 INFO [LoraSoupsMerge] Trainable classifier params : 14,592
+2025-07-13 13:05:21,914 INFO [LoraSoupsMerge] Total trainables            : 14,616
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([4, 1, 12, 128, 128])
+<configilm.extra.DataSets.BENv2_DataSet.BENv2DataSet object at 0x7f3f8dc5fcd0>
+<configilm.extra.DataSets.BENv2_DataSet.BENv2DataSet object at 0x7f3f8dc5f970>
+<configilm.extra.DataSets.BENv2_DataSet.BENv2DataSet object at 0x7f3f8dc5f130>
+<configilm.extra.DataSets.BENv2_DataSet.BENv2DataSet object at 0x7f3f8dc5f1f0>
+<configilm.extra.DataSets.BENv2_DataSet.BENv2DataSet object at 0x7f3f8dc5ffa0>
+<configilm.extra.DataSets.BENv2_DataSet.BENv2DataSet object at 0x7f3f8dc5fe80>
+Epoch 1/1: 0batch [00:00, ?batch/s]Epoch 1/1: 0batch [00:00, ?batch/s, loss=0.327]Epoch 1/1: 1batch [00:00,  1.01batch/s, loss=0.327]Epoch 1/1: 1batch [00:01,  1.01batch/s, loss=0.362]Epoch 1/1: 2batch [00:01,  1.11batch/s, loss=0.362]Epoch 1/1: 2batch [00:02,  1.11batch/s, loss=0.419]Epoch 1/1: 3batch [00:02,  1.14batch/s, loss=0.419]Epoch 1/1: 3batch [00:03,  1.14batch/s, loss=0.422]Epoch 1/1: 4batch [00:03,  1.16batch/s, loss=0.422]Epoch 1/1: 4batch [00:04,  1.16batch/s, loss=0.46] Epoch 1/1: 5batch [00:04,  1.18batch/s, loss=0.46]Epoch 1/1: 5batch [00:05,  1.18batch/s, loss=0.319]Epoch 1/1: 6batch [00:05,  1.19batch/s, loss=0.319]Epoch 1/1: 6batch [00:06,  1.19batch/s, loss=0.303]Epoch 1/1: 7batch [00:06,  1.19batch/s, loss=0.303]Epoch 1/1: 7batch [00:06,  1.19batch/s, loss=0.371]Epoch 1/1: 8batch [00:06,  1.19batch/s, loss=0.371]Epoch 1/1: 8batch [00:07,  1.19batch/s, loss=0.369]Epoch 1/1: 9batch [00:07,  1.19batch/s, loss=0.369]Epoch 1/1: 9batch [00:08,  1.19batch/s, loss=0.33] Epoch 1/1: 10batch [00:08,  1.19batch/s, loss=0.33]Epoch 1/1: 10batch [00:09,  1.19batch/s, loss=0.45]Epoch 1/1: 11batch [00:09,  1.20batch/s, loss=0.45]Epoch 1/1: 11batch [00:10,  1.20batch/s, loss=0.388]Epoch 1/1: 12batch [00:10,  1.20batch/s, loss=0.388]Epoch 1/1: 12batch [00:11,  1.20batch/s, loss=0.36] Epoch 1/1: 13batch [00:11,  1.19batch/s, loss=0.36]Epoch 1/1: 13batch [00:11,  1.19batch/s, loss=0.29]Epoch 1/1: 14batch [00:11,  1.20batch/s, loss=0.29]Epoch 1/1: 14batch [00:12,  1.20batch/s, loss=0.375]Epoch 1/1: 15batch [00:12,  1.21batch/s, loss=0.375]Epoch 1/1: 15batch [00:13,  1.21batch/s, loss=0.277]Epoch 1/1: 16batch [00:13,  1.21batch/s, loss=0.277]Epoch 1/1: 16batch [00:14,  1.21batch/s, loss=0.347]Epoch 1/1: 17batch [00:14,  1.20batch/s, loss=0.347]Epoch 1/1: 17batch [00:15,  1.20batch/s, loss=0.391]Epoch 1/1: 18batch [00:15,  1.19batch/s, loss=0.391]Epoch 1/1: 18batch [00:16,  1.19batch/s, loss=0.345]Epoch 1/1: 19batch [00:16,  1.19batch/s, loss=0.345]Epoch 1/1: 19batch [00:16,  1.19batch/s, loss=0.305]Epoch 1/1: 20batch [00:16,  1.19batch/s, loss=0.305]Epoch 1/1: 20batch [00:17,  1.19batch/s, loss=0.305]Epoch 1/1: 21batch [00:17,  1.18batch/s, loss=0.305]Epoch 1/1: 21batch [00:18,  1.18batch/s, loss=0.341]Epoch 1/1: 22batch [00:18,  1.19batch/s, loss=0.341]Epoch 1/1: 22batch [00:19,  1.19batch/s, loss=0.253]Epoch 1/1: 23batch [00:19,  1.18batch/s, loss=0.253]Epoch 1/1: 23batch [00:20,  1.18batch/s, loss=0.4]  Epoch 1/1: 24batch [00:20,  1.19batch/s, loss=0.4]Epoch 1/1: 24batch [00:21,  1.19batch/s, loss=0.362]Epoch 1/1: 25batch [00:21,  1.20batch/s, loss=0.362]Epoch 1/1: 25batch [00:21,  1.20batch/s, loss=0.312]Epoch 1/1: 26batch [00:21,  1.20batch/s, loss=0.312]Epoch 1/1: 26batch [00:22,  1.20batch/s, loss=0.375]Epoch 1/1: 27batch [00:22,  1.20batch/s, loss=0.375]Epoch 1/1: 27batch [00:23,  1.20batch/s, loss=0.336]Epoch 1/1: 28batch [00:23,  1.19batch/s, loss=0.336]Epoch 1/1: 28batch [00:24,  1.19batch/s, loss=0.314]Epoch 1/1: 29batch [00:24,  1.19batch/s, loss=0.314]Epoch 1/1: 29batch [00:25,  1.19batch/s, loss=0.407]Epoch 1/1: 30batch [00:25,  1.18batch/s, loss=0.407]Epoch 1/1: 30batch [00:26,  1.18batch/s, loss=0.386]Epoch 1/1: 31batch [00:26,  1.19batch/s, loss=0.386]Epoch 1/1: 31batch [00:26,  1.19batch/s, loss=0.324]Epoch 1/1: 32batch [00:26,  1.19batch/s, loss=0.324]Epoch 1/1: 32batch [00:27,  1.19batch/s, loss=0.397]Epoch 1/1: 33batch [00:27,  1.18batch/s, loss=0.397]Epoch 1/1: 33batch [00:28,  1.18batch/s, loss=0.436]Epoch 1/1: 34batch [00:28,  1.18batch/s, loss=0.436]Epoch 1/1: 34batch [00:29,  1.18batch/s, loss=0.365]Epoch 1/1: 35batch [00:29,  1.19batch/s, loss=0.365]Epoch 1/1: 35batch [00:30,  1.19batch/s, loss=0.358]Epoch 1/1: 36batch [00:30,  1.19batch/s, loss=0.358]Epoch 1/1: 36batch [00:31,  1.19batch/s, loss=0.327]Epoch 1/1: 37batch [00:31,  1.19batch/s, loss=0.327]Epoch 1/1: 37batch [00:32,  1.19batch/s, loss=0.36] Epoch 1/1: 38batch [00:32,  1.19batch/s, loss=0.36]Epoch 1/1: 38batch [00:32,  1.19batch/s, loss=0.36]Epoch 1/1: 39batch [00:32,  1.19batch/s, loss=0.36]Epoch 1/1: 39batch [00:33,  1.19batch/s, loss=0.296]Epoch 1/1: 40batch [00:33,  1.19batch/s, loss=0.296]Epoch 1/1: 40batch [00:34,  1.19batch/s, loss=0.298]Epoch 1/1: 41batch [00:34,  1.18batch/s, loss=0.298]Epoch 1/1: 41batch [00:35,  1.18batch/s, loss=0.334]Epoch 1/1: 42batch [00:35,  1.18batch/s, loss=0.334]Epoch 1/1: 42batch [00:36,  1.18batch/s, loss=0.349]Epoch 1/1: 43batch [00:36,  1.18batch/s, loss=0.349]Epoch 1/1: 43batch [00:37,  1.18batch/s, loss=0.315]Epoch 1/1: 44batch [00:37,  1.18batch/s, loss=0.315]Epoch 1/1: 44batch [00:37,  1.18batch/s, loss=0.376]Epoch 1/1: 45batch [00:37,  1.18batch/s, loss=0.376]Epoch 1/1: 45batch [00:38,  1.18batch/s, loss=0.393]Epoch 1/1: 46batch [00:38,  1.18batch/s, loss=0.393]Epoch 1/1: 46batch [00:39,  1.18batch/s, loss=0.28] Epoch 1/1: 47batch [00:39,  1.18batch/s, loss=0.28]Epoch 1/1: 47batch [00:40,  1.18batch/s, loss=0.295]Epoch 1/1: 48batch [00:40,  1.19batch/s, loss=0.295]Epoch 1/1: 48batch [00:41,  1.1[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+9batch/s, loss=0.363]Epoch 1/1: 49batch [00:41,  1.19batch/s, loss=0.363]Epoch 1/1: 49batch [00:42,  1.19batch/s, loss=0.366]Epoch 1/1: 50batch [00:42,  1.19batch/s, loss=0.366]Epoch 1/1: 50batch [00:43,  1.19batch/s, loss=0.313]Epoch 1/1: 51batch [00:43,  1.18batch/s, loss=0.313]Epoch 1/1: 51batch [00:43,  1.18batch/s, loss=0.394]Epoch 1/1: 52batch [00:43,  1.19batch/s, loss=0.394]Epoch 1/1: 52batch [00:44,  1.19batch/s, loss=0.408]Epoch 1/1: 53batch [00:44,  1.19batch/s, loss=0.408]Epoch 1/1: 53batch [00:45,  1.19batch/s, loss=0.324]Epoch 1/1: 54batch [00:45,  1.19batch/s, loss=0.324]Epoch 1/1: 54batch [00:46,  1.19batch/s, loss=0.319]Epoch 1/1: 55batch [00:46,  1.19batch/s, loss=0.319]Epoch 1/1: 55batch [00:47,  1.19batch/s, loss=0.357]Epoch 1/1: 56batch [00:47,  1.20batch/s, loss=0.357]Epoch 1/1: 56batch [00:47,  1.20batch/s, loss=0.265]Epoch 1/1: 57batch [00:47,  1.36batch/s, loss=0.265]Epoch 1/1: 57batch [00:47,  1.19batch/s, loss=0.265]
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+2025-07-13 13:06:11,562 INFO Merge time for task 4: 49.68s
+2025-07-13 13:06:11,612 INFO Continual merged model saved: ./saved_models/continual_task4-Finland-Ireland-Serbia-Portugal.pkl
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([16, 1, 12, 128, 128])
+Input shape: torch.Size([10, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([4, 1, 12, 128, 128])
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([4, 1, 12, 128, 128])
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([4, 1, 12, 128, 128])
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+[96m[INFO]    Opening LMDB environment ...[0m
+/faststorage/arne/mamba/envs/cl_lora_env/lib/python3.9/site-packages/sklearn/metrics/_ranking.py:1033: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+2025-07-13 13:07:46,092 INFO Evaluation time for task 4: 94.48s
+2025-07-13 13:07:46,092 INFO Task 4 completed. Combined test accuracy: 85.65
+2025-07-13 13:07:46,093 INFO Result: {'task': 4, 'countries': ('Finland', 'Ireland', 'Serbia', 'Portugal'), 'merge_time_s': 49.68334341049194, 'eval_time_s': 94.4803557395935, 'num_tasks_merged': 4, 'combined_micro_ap': np.float64(0.4185728592340998), 'combined_macro_ap': np.float64(0.2710068471349439), 'combined_accuracy': 85.65, 'Finland_micro_ap': np.float64(0.44269444027913674), 'Finland_macro_ap': np.float64(0.2336100456639346), 'Finland_accuracy': 86.9578947368421, 'Ireland_micro_ap': np.float64(0.415489216886756), 'Ireland_macro_ap': np.float64(0.23438054883267137), 'Ireland_accuracy': 88.82105263157895, 'Serbia_micro_ap': np.float64(0.4789105685277365), 'Serbia_macro_ap': np.float64(0.20539776804955875), 'Serbia_accuracy': 84.12631578947368, 'Portugal_micro_ap': np.float64(0.3835805254740079), 'Portugal_macro_ap': np.float64(0.21661812828058488), 'Portugal_accuracy': 82.69473684210526, 'mean_micro_ap': np.float64(0.43016868779190925), 'mean_macro_ap': np.float64(0.2225016227066874), 'mean_accuracy': 85.65}
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([8, 1, 12, 128, 128])
+Input shape: torch.Size([4, 1, 12, 128, 128])
+   task  ... Portugal_accuracy
+0     2  ...               NaN
+1     3  ...               NaN
+2     4  ...         82.694737
+
+[3 rows x 23 columns]

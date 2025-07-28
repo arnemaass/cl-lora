@@ -1,0 +1,2 @@
+/faststorage/arne/mamba/envs/cl_lora_env/bin/python: can't open file '/home/arne/src/baseline/merge.py': [Errno 2] No such file or directory
+srun: error: erde: task 0: Exited with exit code 2
