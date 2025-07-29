@@ -9,14 +9,14 @@
 
 
 # 1) Arbeitsverzeichnis wechseln
-cd /home/anton/src/cl-lora/merge
+# cd /home/anton/src/cl-lora/merge
 # cd /home/arne/src/baseline
 # 2) Logs-Ordner anlegen
 mkdir -p log
 
 # 3) Absolute Python‐Binär aus deinem Env nutzen
 #    (das ist das Ergebnis von `which python` in deinem Env)
-PYTHON=/faststorage/arne/mamba/envs/cl_lora_env/bin/python
+PYTHON=/faststorage/SpectralGPT/env/bin/python
 
 export PYTHONPATH="/faststorage/shuocheng/LoRA_ViT:/home/arne/LoRA-ViT:${PYTHONPATH:-}"
 

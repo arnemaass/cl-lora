@@ -1,3 +1,29 @@
+"""
+merge.py
+Main script for LoRA adapter merging experiments in continual learning scenarios.
+
+This script implements and evaluates different LoRA merging strategies:
+1. Continual merging: Incrementally merge new task adapters with previous results
+2. From-scratch merging: Merge all original task adapters in a single step
+
+Supported merging methods:
+- LoRAHub: Gradient-free optimization for optimal LoRA weight combinations
+- LoRASoups: Parametrization-based merging with learnable coefficients
+- ZipLoRA: Alternative merging approach with cosine similarity
+
+The script handles:
+- Loading pre-trained LoRA adapters and classifier heads
+- Dataset management and stratified sampling
+- Model evaluation on individual and combined test sets
+- Results logging and model saving
+
+Dependencies
+------------
+• torch, pandas, joblib, yaml, sklearn
+• Custom SpectralGPT and baseline modules
+• LoRA merging implementations (LoRAHub, LoRASoups, ZipLoRA)
+"""
+
 import argparse
 import json
 import logging
@@ -38,7 +64,17 @@ from baseline import (
 
 
 def sample_stratified_subset(dataset, n, seed):
-    """Return a stratified Subset of size min(n, len(dataset)) maintaining class proportions."""
+    """
+    Return a stratified Subset of size min(n, len(dataset)) maintaining class proportions.
+    
+    Args:
+        dataset: Dataset to sample from
+        n: Number of samples to select
+        seed: Random seed for reproducibility
+    
+    Returns:
+        Subset: Stratified subset of the original dataset
+    """
     if n >= len(dataset):
         return dataset
 
@@ -67,7 +103,16 @@ def sample_stratified_subset(dataset, n, seed):
 
 
 def load_lora_weights(country: str, base_path: str = None):
-    """Load LoRA weights for a specific country."""
+    """
+    Load LoRA weights for a specific country.
+    
+    Args:
+        country: Country name for which to load LoRA weights
+        base_path: Base path for weight files (optional)
+    
+    Returns:
+        dict: LoRA state dictionary or None if not found
+    """
     try:
         from safetensors.torch import load_file
 
@@ -89,7 +134,16 @@ def load_lora_weights(country: str, base_path: str = None):
 
 
 def load_classifier_weights(country: str, base_path: str = None):
-    """Load classifier weights for a specific country."""
+    """
+    Load classifier weights for a specific country.
+    
+    Args:
+        country: Country name for which to load classifier weights
+        base_path: Base path for weight files (optional)
+    
+    Returns:
+        dict: Classifier state dictionary or None if not found
+    """
     try:
         from safetensors.torch import load_file
 
@@ -112,7 +166,17 @@ def load_classifier_weights(country: str, base_path: str = None):
 
 
 def load_weights_for_permutation(countries, permutation, base_path: str = None):
-    """Load weights for countries according to permutation order."""
+    """
+    Load weights for countries according to permutation order.
+    
+    Args:
+        countries: List of country names
+        permutation: Order in which to load countries
+        base_path: Base path for weight files (optional)
+    
+    Returns:
+        tuple: (all_lora_weights, all_classifier_weights) lists
+    """
     all_lora_weights = []
     all_classifier_weights = []
     print(permutation)
@@ -147,7 +211,17 @@ def load_weights_for_permutation(countries, permutation, base_path: str = None):
 
 
 def sample_subset(dataset, n, seed):
-    """Return a Subset of size min(n, len(dataset))."""
+    """
+    Return a Subset of size min(n, len(dataset)).
+    
+    Args:
+        dataset: Dataset to sample from
+        n: Number of samples to select
+        seed: Random seed for reproducibility
+    
+    Returns:
+        Subset: Random subset of the original dataset
+    """
     print(dataset)
     if n >= len(dataset):
         return dataset  # keep the whole set
@@ -165,7 +239,24 @@ def sample_subset(dataset, n, seed):
 def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
     """
     Continual merging: sequentially merge models one task at a time.
-    Only difference from from_scratch: merge previous + new, then update previous.
+    
+    This function implements incremental continual learning where:
+    1. Start with the first task's adapter
+    2. For each new task, merge the previous merged adapter with the new task's adapter
+    3. Update the previous merged adapter to be the result of this merge
+    4. Evaluate on all seen tasks after each merge
+    
+    Key Features:
+    - Memory replay: Maintains a subset of old task data for replay
+    - Incremental merging: Each merge combines previous result + new task
+    - Comprehensive evaluation: Tests on individual and combined task performance
+    
+    Args:
+        test_type: Type of merging method ('LoRAHub', 'LoRASoups', 'ZipLoRA')
+        params: Configuration dictionary containing all experiment parameters
+    
+    Returns:
+        pd.DataFrame: Results dataframe with metrics for each task
     """
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger(__name__)
@@ -180,7 +271,7 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
     lr = float(params.get("lr", 1e-4))
     model_module = params.get("model_module")
 
-    # Load datasets (same as from_scratch)
+    # Load datasets for all countries
     full_train_sets, full_val_sets = get_datasets(
         countries,
         permutation,
@@ -191,6 +282,8 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
         seed=seed,
         frac=0.9,
         model_module=model_module,
+        use_saved_datasets=params.get("use_saved_datasets", False),
+        saved_datasets_dir=params.get("saved_datasets_dir", "~/saved_datasets"),
     )
 
     test_sets, _ = get_datasets(
@@ -203,9 +296,11 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
         seed=seed,
         frac=1,
         model_module=model_module,
+        use_saved_datasets=params.get("use_saved_datasets", False),
+        saved_datasets_dir=params.get("saved_datasets_dir", "~/saved_datasets"),
     )
 
-    # Create stratified subsets (same as from_scratch)
+    # Create stratified subsets for training
     train_subsets = []
     val_subsets = []
     for i, (train_set, val_set) in enumerate(zip(full_train_sets, full_val_sets)):
@@ -221,7 +316,7 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
     if save_dir:
         os.makedirs(save_dir, exist_ok=True)
 
-    # Load base model (same as from_scratch)
+    # Load base model without LoRA wrapping
     if model_module == "SpectralGPT":
         base_model = load_model(r=4, use_lora=False)
     elif model_module == "SoftCon":
@@ -229,7 +324,7 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
     else:
         raise ValueError(f"Unknown model_module: {model_module}")
 
-    # Pre-load all weights (same as from_scratch)
+    # Pre-load all weights according to permutation order
     all_lora_weights, all_classifier_weights = load_weights_for_permutation(
         countries, permutation, params.get("weight_base_path")
     )
@@ -250,6 +345,7 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
             f"Task {current_task}: Adding {countries[permutation[current_task - 1]]} to previous merged model"
         )
 
+        # Calculate memory allocation for replay
         if current_task == 2:  # only one old task so far
             share = memory_size
         else:
@@ -257,6 +353,7 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
                 memory_size / (current_task - 1)
             )  # equal share per old task
 
+        # Prepare replay data from previous tasks
         replay_train_sets.clear()
         replay_val_sets.clear()
         for t in range(current_task - 1):
@@ -270,7 +367,7 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
         new_lora_weights = all_lora_weights[current_task - 1]
         new_classifier_weights = all_classifier_weights[current_task - 1]
 
-        # Create training data for just the new task (for training the merged classifier)
+        # Create data loaders for training
         new_train_loader = DataLoader(
             train_current, batch_size=batch_size, shuffle=True, num_workers=num_workers
         )
@@ -284,7 +381,7 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
             num_workers=num_workers,
         )
 
-        # Create LightningModule
+        # Create LightningModule for training
         if model_module == "SpectralGPT":
             pl_model = SpectralGPTLightningModule(base_model, num_classes=19, lr=lr)
         elif model_module == "SoftCon":
@@ -294,7 +391,7 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
         else:
             raise ValueError(f"Unknown model_module: {model_module}")
 
-        # Merge: previous + new
+        # Perform merging based on test_type
         start_merge = time.time()
 
         if test_type == "LoRASoups":
@@ -391,7 +488,7 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
             )
             log.info(f"Continual merged model saved: {path}")
 
-        # Evaluation (same as from_scratch)
+        # Evaluation on all seen tasks
         eval_metrics: Dict[str, float] = {}
         start_eval = time.time()
 
@@ -425,7 +522,7 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
         eval_time = time.time() - start_eval
         log.info(f"Evaluation time for task {current_task}: {eval_time:.2f}s")
 
-        # Calculate mean metrics (same as from_scratch)
+        # Calculate mean metrics across all individual countries
         sums, counts = defaultdict(float), defaultdict(int)
         for k, v in eval_metrics.items():
             if not k.startswith("combined_"):
@@ -434,6 +531,7 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
                 counts[met] += 1
         mean_metrics = {f"mean_{m}": sums[m] / counts[m] for m in sums}
 
+        # Compile results for this task
         row = {
             "task": current_task,
             "countries": tuple(seen_countries),
@@ -460,8 +558,23 @@ def test_continual_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
 def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame:
     """
     Merges all tasks seen so far from scratch in each step of the loop.
-    At each step T, it takes the original adapters for tasks 1..T and merges them.
-    Training data is pooled uniformly across all tasks with a maximum of n_trainsamples total.
+    
+    This function implements from-scratch merging where:
+    1. At each step T, take the original adapters for tasks 1..T
+    2. Merge all original adapters together in a single operation
+    3. Evaluate on all seen tasks after each merge
+    
+    Key Features:
+    - From-scratch approach: Always merges original adapters, not previous results
+    - Complete data usage: Uses all available data from all seen tasks
+    - Comprehensive evaluation: Tests on individual and combined task performance
+    
+    Args:
+        test_type: Type of merging method ('LoRAHub', 'LoRASoups', 'ZipLoRA')
+        params: Configuration dictionary containing all experiment parameters
+    
+    Returns:
+        pd.DataFrame: Results dataframe with metrics for each task
     """
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger(__name__)
@@ -477,7 +590,7 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
     model_module = params.get("model_module")
     n_trainsamples = params.get("train_samples", 1000)  # Maximum total training samples
 
-    # Load full datasets first
+    # Load full datasets for all countries
     full_train_sets, _ = get_datasets(
         countries,
         permutation,
@@ -501,6 +614,15 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
         frac=1,
         model_module=model_module,
     )
+
+    # Create training subsets for every original task
+    train_subsets = []
+    for i, train_set in enumerate(full_train_sets):
+        # subset_size = max(1, int(len(train_set) * subset_fraction))
+        # train_subsets.append(sample_stratified_subset(train_set, subset_size, seed + i))
+        # log.info(f"Task {i + 1} subset size: {subset_size}/{len(train_set)}")
+        train_subsets.append(train_set)
+        log.info(f"Task {i + 1} using full train set with size: {len(train_set)}")
 
     save_dir = params.get("save_dir")
     if save_dir:
@@ -531,22 +653,10 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
             f"Task {current_task_num}: Merging countries {seen_countries} from scratch"
         )
 
-        # --- MODIFIED DATA HANDLING FOR UNIFORM POOLING ---
-        # Pool all data from all tasks seen so far, then sample uniformly
-        all_seen_data = [full_train_sets[i] for i in range(current_task_num)]
-        combined_dataset = ConcatDataset(all_seen_data)
-        
-        # Sample uniformly from the combined dataset with maximum n_trainsamples
-        if len(combined_dataset) > n_trainsamples:
-            # Use stratified sampling if possible, otherwise random sampling
-            sampled_dataset = sample_stratified_subset(
-                combined_dataset, n_trainsamples, seed
-            )
-            log.info(f"Sampled {n_trainsamples} samples from {len(combined_dataset)} total samples")
-        else:
-            sampled_dataset = combined_dataset
-            log.info(f"Using all {len(combined_dataset)} available samples")
+        # Pool all data from all tasks seen so far
+        all_seen_data = [train_subsets[i] for i in seen_task_indices]
 
+        # Create combined data loader for all seen tasks
         combined_train_loader = DataLoader(
             sampled_dataset,
             batch_size=batch_size,
@@ -612,7 +722,7 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
         merge_time = time.time() - start_merge
         log.info(f"Merge time for task {current_task_num}: {merge_time:.2f}s")
 
-        # --- Evaluation (Identical to original) ---
+        # Evaluation (Identical to continual merging)
         eval_metrics: Dict[str, float] = {}
         start_eval = time.time()
 
@@ -641,6 +751,7 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
         eval_time = time.time() - start_eval
         log.info(f"Evaluation time for task {current_task_num}: {eval_time:.2f}s")
 
+        # Calculate mean metrics across all individual countries
         sums, counts = defaultdict(float), defaultdict(int)
         for k, v in eval_metrics.items():
             if not k.startswith("combined_"):
@@ -649,6 +760,7 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
                 counts[met] += 1
         mean_metrics = {f"mean_{m}": sums[m] / counts[m] for m in sums}
 
+        # Compile results for this task
         row = {
             "task": current_task_num,
             "countries": tuple(seen_countries),
@@ -671,11 +783,20 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
 
 
 # -------------------------------------------------------------------------
-#
+# Configuration and main execution functions
 # -------------------------------------------------------------------------
 
 
 def main_from_config(config_path: str) -> pd.DataFrame:
+    """
+    Load configuration from file and execute the merging experiment.
+    
+    Args:
+        config_path: Path to configuration file (YAML or JSON)
+    
+    Returns:
+        pd.DataFrame: Results of the merging experiment
+    """
     with open(config_path, "r") as f:
         cfg = (
             yaml.safe_load(f)
@@ -726,6 +847,13 @@ def main_from_config(config_path: str) -> pd.DataFrame:
 def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
     """
     Dispatcher function to call the appropriate merging strategy.
+    
+    Args:
+        test_type: Type of merging method to use
+        params: Configuration parameters
+    
+    Returns:
+        pd.DataFrame: Results of the merging experiment
     """
     # Determine which merging approach to use based on config or params
     merging_approach = params.get("merging_approach", "from_scratch")
@@ -742,6 +870,7 @@ def test_merging(test_type, params: Dict[str, Any]) -> pd.DataFrame:
 
 # Setup logging
 def setup_logging():
+    """Initialize logging configuration."""
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
     )
@@ -750,6 +879,12 @@ def setup_logging():
 
 # setup logging and parse command line arguments
 def main():
+    """
+    Main entry point for the script.
+    
+    Parses command line arguments and executes the merging experiment
+    based on the provided configuration file.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", "-c", required=True)
     args = parser.parse_args()

@@ -1,3 +1,32 @@
+"""
+baseline.py
+Baseline implementation for continual learning experiments with remote sensing data.
+
+This module provides baseline implementations for different continual learning strategies:
+1. Fine-tuning from scratch with full replay
+2. Continual fine-tuning without replay
+3. Task-specific tuning for LoRA adapter generation
+
+The module supports:
+- BigEarthNet-V2 dataset loading and preprocessing
+- Multiple model architectures (SpectralGPT, SoftCon)
+- PyTorch Lightning training framework
+- Comprehensive evaluation and logging
+- LoRA parameter saving and loading
+
+Key Features:
+- Dynamic dataset loading based on model architecture
+- Configurable training strategies
+- Multi-label classification evaluation
+- Automatic checkpointing and model saving
+
+Dependencies
+------------
+• torch, pytorch_lightning, pandas, joblib
+• configilm, sklearn, yaml
+• Custom model modules (SpectralGPT, SoftCon)
+"""
+
 import argparse
 import json
 import logging
@@ -23,7 +52,7 @@ from pytorch_lightning.callbacks import (
 from sklearn.metrics import average_precision_score
 from torch.utils.data import ConcatDataset, DataLoader
 
-# Pfade zu den Daten
+# Data paths for BigEarthNet-V2 dataset
 datapath = {
     "images_lmdb": "/faststorage/BigEarthNet-V2/BigEarthNet-V2-LMDB",
     "metadata_parquet": "/faststorage/BigEarthNet-V2/metadata.parquet",
@@ -31,7 +60,7 @@ datapath = {
 }
 util.MESSAGE_LEVEL = util.MessageLevel.INFO
 
-# Disable xFormers for debuggin on CPU
+# Disable xFormers for debugging on CPU
 if not torch.cuda.is_available():
     os.environ["XFORMERS_DISABLED"] = "1"
 
@@ -39,31 +68,37 @@ if not torch.cuda.is_available():
 # -- Trainer Parameters ---
 def create_trainer(params: Dict[str, Any]) -> L.Trainer:
     """
-    Create and configure a central PyTorch Lightning Trainer with early stopping,
-    checkpointing, and learning rate scheduling.
+    Create and configure a central PyTorch Lightning Trainer.
+    
+    This function sets up a trainer with early stopping, checkpointing,
+    and learning rate scheduling for consistent training across experiments.
+    
+    Args:
+        params: Configuration dictionary containing training parameters
+    
+    Returns:
+        L.Trainer: Configured PyTorch Lightning trainer
     """
-
-    # Model checkpoint callback
+    # Model checkpoint callback for saving best models
     checkpoint_callback = ModelCheckpoint(
         monitor="val_loss",  # Metric to monitor
-        # TODO specify right save directory
         # dirpath=params.get("save_dir", "./saved_models"),  # Directory to save checkpoints
         # filename="{country}",  # Placeholder for dynamic naming        save_top_k=1,  # Save only the best model
         mode="min",  # Minimize the validation loss
         verbose=True,
     )
 
-    # Learning rate monitor callback
+    # Learning rate monitor callback for tracking LR changes
     lr_monitor = LearningRateMonitor(logging_interval="epoch")
 
-    # Define the trainer
+    # Define the trainer with distributed training support
     trainer = L.Trainer(
         max_epochs=params.get("epoch", 15),
         accelerator="auto",  # Automatically use GPU if available
         log_every_n_steps=50,
         strategy=L.strategies.DDPStrategy(
             find_unused_parameters=True
-        ),  # Allow unused parameters
+        ),  # Allow unused parameters for LoRA
         default_root_dir=params.get(
             "save_dir", "./saved_models"
         ),  # Directory for logs and checkpoints
@@ -84,10 +119,25 @@ def load_country_train_val(
     model_module=None,  # Specify the model module
 ):
     """
-    Load country-specific train/val datasets. Dynamically adjusts transformations and img_size
-    based on the model_module argument.
+    Load country-specific train/validation datasets.
+    
+    This function dynamically adjusts transformations and image size based on the
+    model architecture to ensure compatibility between different model types.
+    
+    Args:
+        country: Country name to load data for
+        n_samples: Number of samples to load
+        seed: Random seed for reproducibility
+        include_snowy: Whether to include snowy patches
+        include_cloudy: Whether to include cloudy patches
+        split: Data split ('train' or 'test')
+        frac: Fraction for train/val split
+        model_module: Model architecture ('SpectralGPT' or 'SoftCon')
+    
+    Returns:
+        tuple: (train_dataset, val_dataset) for the specified country
     """
-    # Dynamically adjust transformations and img_size
+    # Dynamically adjust transformations and img_size based on model architecture
     transform = train_transform if split == "train" else val_transform
     if model_module == "SoftCon":
         img_size_ben = (14, 224, 224)  # SoftCon-specific img_size for BENv2 loader
@@ -96,6 +146,7 @@ def load_country_train_val(
     else:
         raise ValueError(f"Unknown model_module: {model_module}")
 
+    # Load metadata and filter by country and split
     meta = pd.read_parquet(datapath["metadata_parquet"])
 
     # Filter metadata based on the split
@@ -109,14 +160,17 @@ def load_country_train_val(
         )
         n_samples = len(available)
 
+    # Sample patches randomly
     rng = random.Random(seed)
     sampled = rng.sample(available, k=n_samples)
 
+    # Split into train and validation sets
     split_at = int(n_samples * frac)
     train_ids = set(sampled[:split_at])
     val_ids = set(sampled[split_at:])
 
     def _make_ds(keep_ids):
+        """Helper function to create dataset with specific patch IDs."""
         return BENv2DataSet(
             data_dirs=datapath,
             img_size=img_size_ben,
@@ -147,15 +201,35 @@ def get_datasets(
 ) -> Tuple[List[BENv2DataSet], List[BENv2DataSet]]:
     """
     Dynamically load datasets for the specified countries and permutation.
-    Adjusts img_size based on the model_module.
+    
+    This function loads datasets for multiple countries according to a permutation
+    order, adjusting image size based on the model architecture.
+    
+    Args:
+        countries: List of country names
+        permutation: Order in which to load countries
+        split: Data split ('train' or 'test')
+        include_snowy: Whether to include snowy patches
+        include_cloudy: Whether to include cloudy patches
+        samples_per_country: Number of samples per country
+        seed: Random seed for reproducibility
+        frac: Fraction for train/val split
+        model_module: Model architecture ('SpectralGPT' or 'SoftCon')
+        use_saved_datasets: Whether to use pre-saved datasets
+        saved_datasets_dir: Directory for saved datasets
+    
+    Returns:
+        tuple: (train_datasets, val_datasets) lists for all countries
     """
     if use_saved_datasets:
-    # Import the loader only when needed
+        # Import the loader only when needed
         from saved_dataset_loader import load_country_datasets
         return load_country_datasets(countries, saved_datasets_dir)
+    
     train_datasets: List[BENv2DataSet] = []
     val_datasets: List[BENv2DataSet] = []
 
+    # Load datasets for each country in permutation order
     for idx in permutation:
         country = countries[idx]
         train_ds, val_ds = load_country_train_val(
@@ -177,17 +251,42 @@ def get_datasets(
 def default_metrics(y_true: List[Any], y_pred: List[Any]) -> Dict[str, float]:
     """
     Default evaluation metric: wraps sklearn.metrics.average_precision_score (micro average).
+    
+    Args:
+        y_true: True labels
+        y_pred: Predicted probabilities
+    
+    Returns:
+        dict: Dictionary containing micro average precision score
     """
     return {"micro_AP": average_precision_score(y_true, y_pred, average="micro")}
 
 
 # ---------------------------------------------------------
-# FT FROM SRATCH
+# FINE-TUNING FROM SCRATCH (Full Replay)
 # ---------------------------------------------------------
 def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
     """
     Continual Learning with full replay over permuted countries.
-    Always starts training from the base model weights at each step.
+    
+    This function implements a baseline continual learning strategy where:
+    1. At each step, the model is reinitialized from base weights
+    2. Training is performed on all seen countries (full replay)
+    3. Evaluation is conducted on all seen countries
+    4. LoRA parameters are saved for each step
+    
+    Key Features:
+    - Full replay: Uses all data from previously seen countries
+    - From scratch: Reinitializes model at each step
+    - Comprehensive evaluation: Tests on all seen countries
+    - Parameter saving: Saves LoRA and classifier weights
+    
+    Args:
+        model: Base model to fine-tune
+        params: Configuration dictionary containing experiment parameters
+    
+    Returns:
+        pd.DataFrame: Results dataframe with metrics for each step
     """
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger(__name__)
@@ -204,7 +303,7 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
     rank = params.get("r", 4)  # Default rank for LoRA
     model_module = params.get("model_module")  # Extract model_module from params
 
-    # Load datasets
+    # Load datasets for all countries
     train_sets, val_sets = get_datasets(
         countries,
         permutation,
@@ -230,31 +329,16 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
 
     # save unchanged lora_weights once
 
-    # (1) Compute an absolute directory under your home or your repo
+    # Compute an absolute directory under your home or your repo
     repo_dir = os.path.dirname(
         os.path.abspath(__file__)
     )  # e.g. .../anton/src/cl-lora/baseline
     save_dir = os.path.join(
         repo_dir, "saved_models"
     )  # e.g. .../anton/src/cl-lora/baseline/saved_models
-    os.makedirs(save_dir, exist_ok=True)  # create it if needed
-
-    # # (2) Build a fully‐qualified filename
-    # out_file = os.path.join(save_dir, "lora_weights_baseline.safetensors")
-
-    # # (3) Pass that to save_fc_parameters and save_lora_parameters
-    # model.save_fc_parameters(out_file)
-    # model.save_lora_parameters(out_file)
+    os.makedirs(save_dir, exist_ok=True)  # create it if neede
     path_to_file = "/home/anton/src/cl-lora/baseline/saved_models/lora_weights_baseline.safetensors"
 
-    # # Build fully-qualified filenames
-    # out_file = os.path.join(save_dir, "lora_weights_baseline.safetensors")  # LoRA weights file
-    # path_to_classifier_file = os.path.join(save_dir, "classifier_weights_baseline.pth")  # Classifier weights file
-
-    # else:
-    #     model.load_fc_parameters(path_to_file)
-    #     model.load_lora_parameters(path_to_file)
-    # model = load_model(r=4)
 
     metrics_fn = params.get("metrics_fn", default_metrics)
     save_dir = params.get("save_dir")
@@ -262,12 +346,13 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
         os.makedirs(save_dir, exist_ok=True)
 
     results = []
+    # Main loop: incrementally add countries
     for step in range(1, len(permutation) + 1):
         seen_idx = permutation[:step]
         seen_countries = [countries[i] for i in seen_idx]
         log.info(f"Step {step}: Countries {seen_countries}")
 
-        # Build training DataLoader
+        # Build training DataLoader with all seen countries
         concat_train = ConcatDataset(train_sets[:step])
         concat_val = ConcatDataset(val_sets[:step])
         train_loader = DataLoader(
@@ -279,18 +364,18 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
 
         # Reinitialize the trainer for each step
         trainer = create_trainer(params)
+        
+        # Load fresh base model for each step
         if model_module == "SoftCon":
-            # Reload the base model weights
             base_model = load_model(r=rank)  # Load base model with pretrained weights
             pl_model = SoftConLightningModule(base_model, num_classes=19, lr=lr)
         elif model_module == "SpectralGPT":
-            # Reload the base model weights
             base_model = load_model(r=rank)
             pl_model = SpectralGPTLightningModule(base_model, num_classes=19, lr=lr)
         else:
             raise ValueError(f"Unknown model_module: {model_module}")
 
-        # Train
+        # Train the model
         start_train = time.time()
         trainer.fit(pl_model, train_loader, val_loader)
         train_time = time.time() - start_train
@@ -313,13 +398,13 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
                     f"Skipping saving LoRA and FC parameters for step {step} (not global zero)"
                 )
 
-        # Save model
+        # Save complete model
         if save_dir:
             path = os.path.join(save_dir, f"step{step}-{'-'.join(seen_countries)}.pkl")
             joblib.dump(pl_model, path)
             log.info(f"Model saved: {path}")
 
-        # Eval on all seen
+        # Evaluate on all seen countries
         eval_metrics: Dict[str, float] = {}
         start_eval = time.time()
         for pos, idx in enumerate(seen_idx):
@@ -337,7 +422,7 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
         eval_time = time.time() - start_eval
         log.info(f"Evaluation time: {eval_time:.2f}s")
 
-        # Mean metrics
+        # Calculate mean metrics across all countries
         sums, counts = defaultdict(float), defaultdict(int)
         for k, v in eval_metrics.items():
             _, met = k.split("_", 1)
@@ -345,6 +430,7 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
             counts[met] += 1
         mean_metrics = {f"mean_{m}": sums[m] / counts[m] for m in sums}
 
+        # Compile results for this step
         row = {
             "step": step,
             "countries": tuple(seen_countries),
@@ -360,13 +446,30 @@ def test_finetuning_from_scratch(model: Any, params: Dict[str, Any]) -> pd.DataF
 
 
 # ---------------------------------------------------------
-# CONTINUAL FINETUNING
+# CONTINUAL FINE-TUNING (No Replay)
 # ---------------------------------------------------------
-
-
 def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
     """
     Continual Learning without Replay: Train on new country, evaluate on all seen countries.
+    
+    This function implements a baseline continual learning strategy where:
+    1. The model is trained incrementally on new countries
+    2. No replay data is used (only current country data)
+    3. Evaluation is conducted on all previously seen countries
+    4. Model state is maintained across steps
+    
+    Key Features:
+    - No replay: Only uses current country data for training
+    - Incremental: Maintains model state across steps
+    - Catastrophic forgetting: Expected to show forgetting of previous tasks
+    - Comprehensive evaluation: Tests on all seen countries
+    
+    Args:
+        model: Base model to fine-tune
+        params: Configuration dictionary containing experiment parameters
+    
+    Returns:
+        pd.DataFrame: Results dataframe with metrics for each step
     """
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger(__name__)
@@ -389,7 +492,7 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
     if save_dir:
         os.makedirs(save_dir, exist_ok=True)
 
-    # Load datasets
+    # Load datasets for all countries
     train_sets, val_sets = get_datasets(
         countries,
         permutation,
@@ -411,6 +514,7 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
         frac=1,
         model_module=model_module,  # Pass model_module explicitly
     )
+    
     # Construct LightningModule
     if model_module == "SoftCon":
         pl_model = SoftConLightningModule(model, num_classes=19, lr=lr)
@@ -421,12 +525,14 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
 
     results = []
     prev_model_path = None
+    
+    # Main loop: incrementally add countries
     for step in range(1, len(permutation) + 1):
         seen_idx = permutation[:step]
         seen_countries = [countries[i] for i in seen_idx]
         log.info(f"Step {step}: Countries {seen_countries}")
 
-        # Train on new country DataLoader
+        # Train on new country DataLoader only
         ds_new = train_sets[step - 1]
         train_loader = DataLoader(
             ds_new, batch_size=batch_size, shuffle=True, num_workers=num_workers
@@ -448,7 +554,7 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
         else:
             raise ValueError(f"Unknown model_module: {model_module}")
 
-        # Train
+        # Train the model
         start_train = time.time()
         trainer.fit(pl_model, train_loader, val_loader)
         train_time = time.time() - start_train
@@ -471,13 +577,14 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
                     f"Skipping saving LoRA and FC parameters for step {step} (not global zero)"
                 )
 
+        # Save model for this step
         if save_dir:
             path = os.path.join(save_dir, f"step{step}-{seen_countries[-1]}.pkl")
             joblib.dump(pl_model, path)
             prev_model_path = path
             log.info(f"Saved: {path}")
 
-        # Eval all seen
+        # Evaluate on all seen countries
         eval_metrics = {}
         start_eval = time.time()
         for pos, idx in enumerate(seen_idx):
@@ -494,7 +601,7 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
         eval_time = time.time() - start_eval
         log.info(f"Eval time: {eval_time:.2f}s")
 
-        # Calculate mean metrics
+        # Calculate mean metrics across all countries
         sums, counts = defaultdict(float), defaultdict(int)
         for k, v in eval_metrics.items():
             _, met = k.split("_", 1)
@@ -502,6 +609,7 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
             counts[met] += 1
         mean_metrics = {f"mean_{m}": sums[m] / counts[m] for m in sums}
 
+        # Compile results for this step
         row = {
             "step": step,
             "countries": tuple(seen_countries),
@@ -519,13 +627,26 @@ def test_continual_finetuning(model: Any, params: Dict[str, Any]) -> pd.DataFram
 # ---------------------------------------------------------
 # TASK TUNING for merging
 # ---------------------------------------------------------
-
-
 def test_task_tuning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
     """
     Task-specific tuning: Train the base model independently on each country.
-    Each task (country) is trained from scratch without any continual learning.
-    This trains the lora heads as input for our merging strategies.
+    
+    This function trains independent LoRA adapters for each country, which can then
+    be used as input for LoRA merging strategies. Each task is trained from scratch
+    without any continual learning mechanisms.
+    
+    Key Features:
+    - Independent training: Each country is trained separately
+    - From scratch: Fresh model for each task
+    - LoRA generation: Creates task-specific LoRA adapters
+    - Individual evaluation: Tests each task independently
+    
+    Args:
+        model: Base model to fine-tune
+        params: Configuration dictionary containing experiment parameters
+    
+    Returns:
+        pd.DataFrame: Results dataframe with metrics for each task
     """
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger(__name__)
@@ -548,7 +669,7 @@ def test_task_tuning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
     if save_dir:
         os.makedirs(save_dir, exist_ok=True)
 
-    # Load datasets
+    # Load datasets for all countries
     train_sets, val_sets = get_datasets(
         countries,
         permutation,
@@ -606,7 +727,7 @@ def test_task_tuning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
         # Reinitialize the trainer for each task
         trainer = create_trainer(params)
 
-        # Train
+        # Train the model
         start_train = time.time()
         trainer.fit(pl_model, train_loader, val_loader)
         train_time = time.time() - start_train
@@ -666,11 +787,21 @@ def test_task_tuning(model: Any, params: Dict[str, Any]) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------
-#
+# Configuration and main execution functions
 # ---------------------------------------------------------
-
-
 def main_from_config(config_path: str) -> pd.DataFrame:
+    """
+    Load configuration from file and execute the baseline experiment.
+    
+    This function handles dynamic module importing, configuration loading,
+    and dispatches to the appropriate baseline strategy based on test_type.
+    
+    Args:
+        config_path: Path to configuration file (YAML or JSON)
+    
+    Returns:
+        pd.DataFrame: Results of the baseline experiment
+    """
     with open(config_path, "r") as f:
         cfg = (
             yaml.safe_load(f)
@@ -727,6 +858,8 @@ def main_from_config(config_path: str) -> pd.DataFrame:
         params["metrics_fn"] = getattr(import_module(mod), fn)
 
     model = load_model(r=params.get("r", 4))  # Pass params to load_model
+    
+    # Dispatch to appropriate baseline strategy
     if test_type == "replay":
         return test_finetuning_from_scratch(model, params)
     elif test_type == "no_replay":
@@ -738,6 +871,7 @@ def main_from_config(config_path: str) -> pd.DataFrame:
 
 
 def setup_logging():
+    """Initialize logging configuration."""
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
     )
@@ -745,6 +879,12 @@ def setup_logging():
 
 
 def main():
+    """
+    Main entry point for the baseline script.
+    
+    Parses command line arguments and executes the baseline experiment
+    based on the provided configuration file.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", "-c", required=True)
     args = parser.parse_args()
