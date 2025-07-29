@@ -461,6 +461,7 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
     """
     Merges all tasks seen so far from scratch in each step of the loop.
     At each step T, it takes the original adapters for tasks 1..T and merges them.
+    Training data is pooled uniformly across all tasks with a maximum of n_trainsamples total.
     """
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger(__name__)
@@ -474,6 +475,7 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
     epoch = params.get("epoch", 1)
     lr = float(params.get("lr", 1e-4))
     model_module = params.get("model_module")
+    n_trainsamples = params.get("train_samples", 1000)  # Maximum total training samples
 
     # Load full datasets first
     full_train_sets, _ = get_datasets(
@@ -499,15 +501,6 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
         frac=1,
         model_module=model_module,
     )
-
-    # Create stratified subsets for every original task
-    train_subsets = []
-    for i, train_set in enumerate(full_train_sets):
-        # subset_size = max(1, int(len(train_set) * subset_fraction))
-        # train_subsets.append(sample_stratified_subset(train_set, subset_size, seed + i))
-        # log.info(f"Task {i + 1} subset size: {subset_size}/{len(train_set)}")
-        train_subsets.append(train_set)
-        log.info(f"Task {i + 1} using full train set with size: {len(train_set)}")
 
     save_dir = params.get("save_dir")
     if save_dir:
@@ -538,19 +531,28 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
             f"Task {current_task_num}: Merging countries {seen_countries} from scratch"
         )
 
-        # --- CORRECTED DATA HANDLING FOR "FROM SCRATCH" ---
-        # Pool all data from all tasks seen so far.
-        all_seen_data = [train_subsets[i] for i in seen_task_indices]
+        # --- MODIFIED DATA HANDLING FOR UNIFORM POOLING ---
+        # Pool all data from all tasks seen so far, then sample uniformly
+        all_seen_data = [full_train_sets[i] for i in range(current_task_num)]
+        combined_dataset = ConcatDataset(all_seen_data)
+        
+        # Sample uniformly from the combined dataset with maximum n_trainsamples
+        if len(combined_dataset) > n_trainsamples:
+            # Use stratified sampling if possible, otherwise random sampling
+            sampled_dataset = sample_stratified_subset(
+                combined_dataset, n_trainsamples, seed
+            )
+            log.info(f"Sampled {n_trainsamples} samples from {len(combined_dataset)} total samples")
+        else:
+            sampled_dataset = combined_dataset
+            log.info(f"Using all {len(combined_dataset)} available samples")
 
-        # The merge functions expect two loaders. We'll pass all data in one
-        # and an empty list to the other to create an empty loader.
         combined_train_loader = DataLoader(
-            ConcatDataset(all_seen_data),
+            sampled_dataset,
             batch_size=batch_size,
             shuffle=True,
             num_workers=num_workers,
         )
-        # empty_loader = DataLoader([], batch_size=batch_size)  # Empty loader
 
         # Create a fresh LightningModule for each from-scratch merge
         if model_module == "SpectralGPT":
@@ -576,7 +578,7 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
 
             merged_model, merged_lora, merged_classifier = LoraSoupsMerge_from_scratch(
                 pl_model=pl_model,
-                train_loader=combined_train_loader,  # Pass all data in one loader
+                train_loader=combined_train_loader,  # Pass sampled data
                 lora_heads=lora_heads_to_merge,
                 classifier_heads=classifier_heads_to_merge,
                 mode="learnable",
@@ -586,11 +588,14 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
             )
         elif test_type == "ZipLoRA":
             from ziplora import ZipLoRaMerge
+            
+            # Create empty loader for ZipLoRA's interface
+            empty_loader = DataLoader([], batch_size=batch_size)
 
             merged_model, merged_lora, merged_classifier = ZipLoRaMerge(
                 pl_model=pl_model,
-                train_loader_old=combined_train_loader,  # All data
-                train_loader_new=empty_loader,  # Empty loader here
+                train_loader_old=combined_train_loader,  # Sampled data
+                train_loader_new=empty_loader,  # Empty loader
                 lora_heads=lora_heads_to_merge,
                 classifier_heads=classifier_heads_to_merge,
                 step=current_task_num,
@@ -607,7 +612,7 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
         merge_time = time.time() - start_merge
         log.info(f"Merge time for task {current_task_num}: {merge_time:.2f}s")
 
-        # --- Evaluation (Identical to continual merging) ---
+        # --- Evaluation (Identical to original) ---
         eval_metrics: Dict[str, float] = {}
         start_eval = time.time()
 
@@ -650,6 +655,7 @@ def test_merging_from_scratch(test_type, params: Dict[str, Any]) -> pd.DataFrame
             "merge_time_s": merge_time,
             "eval_time_s": eval_time,
             "num_tasks_merged": len(seen_task_indices),
+            "total_train_samples": len(sampled_dataset),  # Add this for tracking
         }
         row.update(eval_metrics)
         row.update(mean_metrics)
